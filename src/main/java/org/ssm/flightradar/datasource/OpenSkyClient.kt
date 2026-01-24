@@ -12,6 +12,7 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.model.FlightState
+import java.util.concurrent.atomic.AtomicReference
 
 class OpenSkyClient(private val config: AppConfig) {
 
@@ -26,10 +27,24 @@ class OpenSkyClient(private val config: AppConfig) {
     }
 
     /* =========================
+       Token state (cached)
+       ========================= */
+
+    private val accessToken = AtomicReference<String?>(null)
+    private var tokenExpiresAtEpoch: Long = 0L
+
+    /* =========================
        Auth (Client Credentials)
        ========================= */
 
-    private suspend fun getAccessToken(): String {
+    private suspend fun ensureAccessToken(): String {
+        val now = System.currentTimeMillis() / 1000
+
+        val cached = accessToken.get()
+        if (cached != null && now < tokenExpiresAtEpoch - 60) {
+            return cached
+        }
+
         val response = client.submitForm(
             url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
             formParameters = Parameters.build {
@@ -39,8 +54,16 @@ class OpenSkyClient(private val config: AppConfig) {
             }
         ).body<JsonObject>()
 
-        return response["access_token"]?.jsonPrimitive?.content
+        val token = response["access_token"]?.jsonPrimitive?.content
             ?: error("OpenSky access_token missing")
+
+        val expiresIn = response["expires_in"]?.jsonPrimitive?.longOrNull
+            ?: error("OpenSky expires_in missing")
+
+        accessToken.set(token)
+        tokenExpiresAtEpoch = now + expiresIn
+
+        return token
     }
 
     /* =========================
@@ -54,7 +77,7 @@ class OpenSkyClient(private val config: AppConfig) {
         lomax: Double
     ): List<FlightState> {
 
-        val token = getAccessToken()
+        val token = ensureAccessToken()
 
         val responseText = client.get(
             "https://opensky-network.org/api/states/all" +
@@ -67,7 +90,7 @@ class OpenSkyClient(private val config: AppConfig) {
         val states = root["states"]?.jsonArray ?: return emptyList()
 
         /*
-         OpenSky state array indices (important):
+         OpenSky state array indices:
          0  -> icao24
          1  -> callsign (padded)
          5  -> longitude
@@ -104,7 +127,7 @@ class OpenSkyClient(private val config: AppConfig) {
         endEpoch: Long
     ): List<JsonObject> {
 
-        val token = getAccessToken()
+        val token = ensureAccessToken()
 
         val responseText = client.get(
             "https://opensky-network.org/api/flights/callsign" +
