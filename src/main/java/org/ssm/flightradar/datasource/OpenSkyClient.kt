@@ -99,8 +99,10 @@ class OpenSkyClient(private val config: AppConfig) {
 
         val responseText = response.bodyAsText()
         val root = json.parseToJsonElement(responseText).jsonObject
-        val states = root["states"]?.jsonArray ?: return emptyList()
-
+        val states = when (val statesElement = root["states"]) {
+            is JsonArray -> statesElement
+            else -> return emptyList()
+        }
         /*
          OpenSky state array indices:
          0  -> icao24
