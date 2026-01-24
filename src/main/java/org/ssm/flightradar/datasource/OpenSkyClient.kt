@@ -79,13 +79,25 @@ class OpenSkyClient(private val config: AppConfig) {
 
         val token = ensureAccessToken()
 
-        val responseText = client.get(
+        val response: HttpResponse = client.get(
             "https://opensky-network.org/api/states/all" +
                     "?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax"
         ) {
             header(HttpHeaders.Authorization, "Bearer $token")
-        }.bodyAsText()
+        }
 
+        if (response.status != HttpStatusCode.OK) {
+            println("OpenSky states API failed: ${response.status}")
+            return emptyList()
+        }
+
+        val contentType = response.headers[HttpHeaders.ContentType] ?: ""
+        if (!contentType.contains("application/json")) {
+            println("OpenSky returned non-JSON response: $contentType")
+            return emptyList()
+        }
+
+        val responseText = response.bodyAsText()
         val root = json.parseToJsonElement(responseText).jsonObject
         val states = root["states"]?.jsonArray ?: return emptyList()
 
