@@ -4,20 +4,27 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.ssm.SsmClient
 import software.amazon.awssdk.services.ssm.model.GetParameterRequest
 
-class AwsParameterStore(region: Region = Region.EU_CENTRAL_1) {
+class AwsParameterStore {
 
-    private val client: SsmClient = SsmClient.builder()
-        .region(region)
+    private val ssm = SsmClient.builder()
+        .region(Region.EU_CENTRAL_1)
         .build()
 
     fun getSecureParameter(name: String): String {
-        val request = GetParameterRequest.builder()
-            .name(name)
-            .withDecryption(true)
-            .build()
+        return ssm.getParameter(
+            GetParameterRequest.builder()
+                .name(name)
+                .withDecryption(true)
+                .build()
+        ).parameter().value()
+    }
 
-        return client.getParameter(request)
-            .parameter()
-            .value()
+    fun getParameter(name: String): String {
+        return ssm.getParameter(
+            GetParameterRequest.builder()
+                .name(name)
+                .build()
+        ).parameter().value()
     }
 }
+

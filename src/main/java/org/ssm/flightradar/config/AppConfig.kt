@@ -13,32 +13,53 @@ data class AppConfig(
 
         fun fromEnv(): AppConfig {
 
-            // This is set automatically on EC2
-            val isAws = System.getenv("AWS_EXECUTION_ENV") != null
+            val ssm = AwsParameterStore()
 
-            val ssm = if (isAws) AwsParameterStore() else null
+            fun secret(
+                envName: String,
+                ssmName: String,
+                default: String? = null
+            ): String {
+                return System.getenv(envName)
+                    ?: runCatching { ssm.getSecureParameter(ssmName) }.getOrNull()
+                    ?: default
+                    ?: error("Missing config: $envName / $ssmName")
+            }
 
-            fun secret(envName: String, ssmName: String): String {
-                return if (isAws) {
-                    ssm!!.getSecureParameter(ssmName)
-                } else {
-                    System.getenv(envName)
-                        ?: error("Missing env var: $envName")
-                }
+            fun value(
+                envName: String,
+                ssmName: String,
+                default: String
+            ): String {
+                return System.getenv(envName)
+                    ?: runCatching { ssm.getSecureParameter(ssmName) }.getOrNull()
+                    ?: default
             }
 
             return AppConfig(
-                port = (System.getenv("PORT") ?: "8080").toInt(),
-                mongoUri = System.getenv("MONGO_URI") ?: "mongodb://localhost:27017",
-                mongoDb = System.getenv("MONGO_DB") ?: "flight_radar",
+                port = System.getenv("PORT")?.toInt()
+                    ?: 8080,
+
+                mongoUri = secret(
+                    envName = "MONGO_URI",
+                    ssmName = "/flight-radar/mongo/uri",
+                    default = "mongodb://localhost:27017"
+                ),
+
+                mongoDb = value(
+                    envName = "MONGO_DB",
+                    ssmName = "/flight-radar/mongo/db",
+                    default = "flight_radar"
+                ),
 
                 openskyClientId = secret(
                     envName = "OPENSKY_CLIENT_ID",
-                    ssmName = "opensky_client_id"
+                    ssmName = "/flight-radar/opensky/client_id"
                 ),
+
                 openskyClientSecret = secret(
                     envName = "OPENSKY_CLIENT_SECRET",
-                    ssmName = "opensky_client_secret"
+                    ssmName = "/flight-radar/opensky/client_secret"
                 )
             )
         }
