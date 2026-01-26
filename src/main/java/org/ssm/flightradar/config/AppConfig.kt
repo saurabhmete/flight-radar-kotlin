@@ -54,12 +54,12 @@ data class AppConfig(
 
                 openskyClientId = secret(
                     envName = "OPENSKY_CLIENT_ID",
-                    ssmName = "/flight-radar/opensky/client_id"
+                    ssmName = "opensky_client_id"
                 ),
 
                 openskyClientSecret = secret(
                     envName = "OPENSKY_CLIENT_SECRET",
-                    ssmName = "/flight-radar/opensky/client_secret"
+                    ssmName = "opensky_client_secret"
                 )
             )
         }
