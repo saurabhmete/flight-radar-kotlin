@@ -32,7 +32,13 @@ class RouteEnricher(
         if (flights.isEmpty()) return null
 
         // We prefer the most recent flight with both airports known.
-        val sorted = flights.sortedByDescending { it["lastSeen"]?.jsonPrimitive?.longOrNull ?: 0L }
+        val sorted = flights.sortedByDescending {
+            it["lastSeen"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.toLongOrNull()
+                ?: 0L
+        }
 
         for (f in sorted) {
             val dep = f["estDepartureAirport"]?.jsonPrimitive?.contentOrNull
