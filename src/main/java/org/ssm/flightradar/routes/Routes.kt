@@ -38,7 +38,7 @@ fun Application.registerRoutes(config: AppConfig) {
                 require(limit in 1..20) { "limit must be between 1 and 20" }
                 require(maxDistance in 1.0..500.0) { "max_distance_km must be between 1 and 500" }
 
-                val flights = service.nearby(limit, maxDistance)
+                val flights = service.nearby(limit)
                 call.respond(NearbyFlightsResponseDto(flights.map { it.toDto() }))
             }
         }

@@ -5,6 +5,7 @@ import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.domain.NearbyFlight
 import org.ssm.flightradar.util.Geo
+import kotlin.math.sqrt
 
 class FlightService(
     private val openSky: OpenSkyDataSource,
@@ -12,13 +13,17 @@ class FlightService(
     private val config: AppConfig,
     private val enrichment: FlightEnrichmentService
 ) {
+    private val HOME_LAT = 51.505122562296975
+    private val HOME_LON = 7.466314232256936
+
+    private val MAX_DISTANCE_KM = 40.0
+    private val MIN_ALTITUDE_METERS = 500.0
 
     private val centerLat = config.centerLat
     private val centerLon = config.centerLon
 
     suspend fun nearby(
         limit: Int,
-        maxDistanceKm: Double
     ): List<NearbyFlight> {
 
         val nowEpoch = System.currentTimeMillis() / 1000
@@ -35,9 +40,9 @@ class FlightService(
             val lon = state.lon ?: return@mapNotNull null
 
             val distance =
-                Geo.haversineKm(centerLat, centerLon, lat, lon)
+                Geo.haversineKm(HOME_LAT, HOME_LON, lat, lon)
 
-            if (distance > maxDistanceKm) return@mapNotNull null
+            if (!isVisible(distance, state.altitude)) return@mapNotNull null
 
             NearbyFlight(
                 icao24 = state.icao24,
@@ -56,5 +61,19 @@ class FlightService(
 
         // Enrich only the limited set (avoid unnecessary external calls).
         return base.map { enrichment.enrich(it, nowEpoch) }
+    }
+
+    private fun isVisible(
+        distanceKm: Double,
+        altitudeMeters: Double?
+    ): Boolean {
+        if (altitudeMeters == null) return false
+        if (altitudeMeters < MIN_ALTITUDE_METERS) return false
+        if (distanceKm > MAX_DISTANCE_KM) return false
+
+        // Distance to horizon (km)
+        val horizonKm = 3.57 * sqrt(altitudeMeters)
+
+        return distanceKm <= horizonKm
     }
 }
