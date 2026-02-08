@@ -22,6 +22,8 @@ dependencies {
     implementation("io.ktor:ktor-server-call-logging-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
     implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-status-pages-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-request-validation-jvm:$ktorVersion")
 
     implementation("io.ktor:ktor-client-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-client-cio-jvm:$ktorVersion")
@@ -39,6 +41,14 @@ dependencies {
 
 application {
     mainClass = "org.ssm.flightradar.ApplicationKt"
+}
+
+tasks.register<JavaExec>("runArrivalJob") {
+    group = "application"
+    description = "Runs the arrival batch job once (uses only yesterday's OpenSky data)."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.ssm.flightradar.ArrivalJobMainKt")
+    args("arrival-job")
 }
 
 tasks.test {

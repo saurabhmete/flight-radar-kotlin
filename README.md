@@ -1,199 +1,144 @@
-# ✈️ Flight Radar – Kotlin Backend
+# Flight Radar (Kotlin / Ktor)
 
-A lightweight Kotlin backend that fetches live flight data from **OpenSky**, enriches it with cached arrival/departure information, and exposes clean APIs for displaying flight information on external displays (ESP32 / e‑ink / Android / web widgets).
+A lightweight Kotlin backend that fetches live flight states from OpenSky, enriches them from a MongoDB cache, and exposes a small REST API suitable for low-power clients (ESP32 displays, Raspberry Pi dashboards, Android widgets).
 
-This project is designed to be **simple, cheap, and reliable** — avoiding heavy UI stacks while keeping logic solid and testable.
+The project also includes a batch job that resolves missing arrival airports using OpenSky historical endpoints (limited to previous-day data).
 
----
+## Features
 
-## 🚀 What this project does
+- Live "nearby flights" endpoint via OpenSky state vectors
+- MongoDB cache for departure/arrival enrichment
+- AWS SSM Parameter Store support for secrets (optional)
+- Batch job to resolve missing arrivals using yesterday's flight history
+- Structured error responses and basic query validation
 
-- Fetches **live overhead flights** using the OpenSky API
-- Caches flight metadata (callsign → origin/destination)
-- Uses **MongoDB** as a lightweight cache store
-- Stores secrets securely using **AWS SSM Parameter Store**
-- Runs a **nightly arrival batch job** to resolve missing destinations
-- Exposes REST endpoints for consumption by:
-  - ESP32 / microcontrollers
-  - Raspberry Pi displays
-  - Android / web dashboards
-
----
-
-## 🧱 Architecture (High level)
+## High-level architecture
 
 ```
-┌─────────────┐      ┌─────────────┐
-│  OpenSky    │ ---> │ Kotlin API  │
-│   API       │      │ (Ktor)      │
-└─────────────┘      ├─────────────┤
-                     │ MongoDB     │
-                     │ (Cache)     │
-                     ├─────────────┤
-                     │ Arrival Job │
-                     └─────────────┘
-                           │
-                           ▼
-                     External Displays
-                  (ESP32 / Android / Pi)
+OpenSky (live states)  --->  Ktor API  --->  Client display
+                    \         |
+                     \        v
+OpenSky (history)  --->  Arrival batch job  --->  MongoDB cache
 ```
 
----
+## API
 
-## 📂 Project structure
-
-```
-src/main/java/org/ssm/flightradar
-│
-├── Application.kt          # Main Ktor application
-├── ArrivalJobMain.kt       # Entry point for batch job
-│
-├── config/
-│   └── AppConfig.kt        # App & environment configuration
-│
-├── datasource/
-│   ├── AwsParameterStore.kt  # AWS SSM integration
-│   ├── MongoProvider.kt      # MongoDB client
-│   └── OpenSkyClient.kt      # OpenSky API client
-│
-├── model/
-│   ├── FlightCacheDocument.kt
-│   └── Models.kt
-│
-├── routes/
-│   └── Routes.kt           # REST endpoints
-│
-├── service/
-│   ├── FlightService.kt     # Core business logic
-│   └── ArrivalBatchJob.kt   # Nightly arrival resolver
-│
-├── util/
-│   └── Geo.kt              # Geo helpers (distance, bounding box)
-```
-
----
-
-## 🔌 API Endpoints (example)
-
-> Exact routes may evolve — keep backend flexible for display clients.
+### Health
 
 ```
-GET /flights/nearby
+GET /health
 ```
-Returns overhead flights enriched with cached data.
+
+### Nearby flights
+
+```
+GET /api/flights/nearby?limit=3&max_distance_km=80
+```
+
+Query params:
+
+- `limit` (1..20, default 3)
+- `max_distance_km` (1..500, default 80)
+
+Example response:
 
 ```json
-[
-  {
-    "callsign": "LH123",
-    "from": "FRA",
-    "to": "DEL",
-    "altitude": 10300,
-    "lat": 51.4,
-    "lon": 7.4
-  }
-]
+{
+  "flights": [
+    {
+      "icao24": "3c4b45",
+      "callsign": "DLH1234",
+      "altitude": 10300.0,
+      "lat": 51.52,
+      "lon": 7.42,
+      "velocity": 230.1,
+      "distance_km": 12.7,
+      "departure": "EDDF",
+      "departure_name": "Frankfurt Main",
+      "arrival": "EDDM",
+      "arrival_name": "Munich"
+    }
+  ]
+}
 ```
 
----
+Error response shape:
 
-## 🌙 Arrival Batch Job
-
-Some OpenSky flights **don’t have arrival info in real time**.
-
-The batch job:
-- Runs on **previous day data only** (OpenSky limitation)
-- Retries unresolved flights up to **2 days**
-- Marks flights as `no_data` after final failure
-- Updates MongoDB cache
-
-This keeps live queries fast and cheap.
-
----
-
-## 🔐 Configuration & Secrets
-
-Secrets are **not hardcoded**.
-
-Stored in **AWS SSM Parameter Store**:
-
-- `OPENSKY_USERNAME`
-- `OPENSKY_PASSWORD`
-- `MONGODB_URI`
-
-Loaded at runtime via `AwsParameterStore`.
-
----
-
-## ▶️ Running the project
-
-### Prerequisites
-
-- Java 17+
-- MongoDB (local or remote)
-- AWS credentials (for SSM)
-
-### Run API server
-
-```bash
-./gradlew run
+```json
+{ "error": "bad_request", "details": "limit must be between 1 and 20" }
 ```
 
-### Run arrival batch job
+## Batch job
+
+The arrival batch job resolves flights where `arrival` is missing in MongoDB.
+
+Important: OpenSky arrival data is most reliable for completed flights, so the job queries only yesterday's flight history.
+
+Run once:
 
 ```bash
 ./gradlew runArrivalJob
 ```
 
----
+## Configuration
 
-## 🧪 Why Kotlin + Ktor?
+Environment variables (all can be provided via env; some can also be loaded from AWS SSM):
 
-- Extremely **low memory footprint**
-- Fast startup (great for EC2 free tier)
-- Strong typing for long‑running background jobs
-- Easy to consume from microcontrollers
+| Variable | Purpose | Default |
+|---|---|---|
+| PORT | HTTP port | 8080 |
+| MONGO_URI | Mongo connection string | mongodb://localhost:27017 |
+| MONGO_DB | Mongo database name | flight_radar |
+| OPENSKY_CLIENT_ID | OpenSky OAuth client id | (required) |
+| OPENSKY_CLIENT_SECRET | OpenSky OAuth client secret | (required) |
+| CENTER_LAT | Center latitude for nearby search | 51.5136 |
+| CENTER_LON | Center longitude for nearby search | 7.4653 |
+| BBOX_DELTA_DEG | Bounding box half-size (degrees) | 1.0 |
 
----
+## Run locally
 
-## 🖥️ Display ideas (intended use)
+Prereqs:
 
-This backend is intentionally UI‑agnostic.
+- Java 17+
+- MongoDB
 
-Works well with:
+Start API:
 
-- ESP32 / e‑ink displays (HTTP polling)
-- Raspberry Pi (fullscreen browser / Python client)
-- Old Android phones (single‑activity kiosk app)
-- Desktop widgets
+```bash
+./gradlew run
+```
 
----
+Call API:
 
-## 🧠 Design philosophy
+```bash
+curl "http://localhost:8080/api/flights/nearby?limit=3&max_distance_km=80"
+```
 
-> **"Do the hard thinking once, keep devices dumb."**
+## Project structure
 
-All complexity lives here:
-- Caching
-- Rate‑limit handling
-- Arrival inference
+```
+src/main/java/org/ssm/flightradar
+  Application.kt
+  ArrivalJobMain.kt
 
-Displays only render JSON.
+  api/
+    dto/
+    mapper/
 
----
+  config/
+  datasource/
+  domain/
+  persistence/
+  routes/
+  service/
+  util/
+```
 
-## 📜 License
+## Notes
 
-MIT License — build cool stuff.
+- The OpenSky "states" endpoint returns callsigns padded with whitespace. The client trims callsigns before use.
+- The batch job sleeps between requests to be polite to rate limits.
 
----
+## License
 
-## ✨ Future ideas
-
-- WebSocket push for displays
-- E‑ink optimized endpoint
-- City‑based filtering
-- Historical stats
-
----
-
+MIT

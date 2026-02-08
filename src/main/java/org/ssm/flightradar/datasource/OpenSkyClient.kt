@@ -10,11 +10,14 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 import org.ssm.flightradar.config.AppConfig
-import org.ssm.flightradar.model.FlightState
+import org.ssm.flightradar.domain.FlightState
 import java.util.concurrent.atomic.AtomicReference
 
-class OpenSkyClient(private val config: AppConfig) {
+class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
+
+    private val log = LoggerFactory.getLogger(OpenSkyClient::class.java)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -70,7 +73,7 @@ class OpenSkyClient(private val config: AppConfig) {
        LIVE STATES (used by API)
        ========================= */
 
-    suspend fun getStatesInBoundingBox(
+    override suspend fun getStatesInBoundingBox(
         lamin: Double,
         lomin: Double,
         lamax: Double,
@@ -87,13 +90,13 @@ class OpenSkyClient(private val config: AppConfig) {
         }
 
         if (response.status != HttpStatusCode.OK) {
-            println("OpenSky states API failed: ${response.status}")
+            log.warn("OpenSky states API failed: {}", response.status)
             return emptyList()
         }
 
         val contentType = response.headers[HttpHeaders.ContentType] ?: ""
         if (!contentType.contains("application/json")) {
-            println("OpenSky returned non-JSON response: $contentType")
+            log.warn("OpenSky returned non-JSON response: {}", contentType)
             return emptyList()
         }
 
@@ -135,7 +138,7 @@ class OpenSkyClient(private val config: AppConfig) {
        HISTORICAL FLIGHTS (arrival batch job)
        ===================================== */
 
-    suspend fun getFlightHistoryByCallsign(
+    override suspend fun getFlightHistoryByCallsign(
         callsign: String,
         beginEpoch: Long,
         endEpoch: Long

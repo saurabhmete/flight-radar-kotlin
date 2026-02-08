@@ -7,7 +7,19 @@ data class AppConfig(
     val mongoUri: String,
     val mongoDb: String,
     val openskyClientId: String,
-    val openskyClientSecret: String
+    val openskyClientSecret: String,
+
+    /**
+     * Center point for "nearby flights" queries.
+     * Defaults to Dortmund (easy to override in deployments).
+     */
+    val centerLat: Double,
+    val centerLon: Double,
+
+    /**
+     * Bounding box half-size in degrees (rough filter before distance calc).
+     */
+    val bboxDeltaDeg: Double
 ) {
     companion object {
 
@@ -60,7 +72,11 @@ data class AppConfig(
                 openskyClientSecret = secret(
                     envName = "OPENSKY_CLIENT_SECRET",
                     ssmName = "opensky_client_secret"
-                )
+                ),
+
+                centerLat = (System.getenv("CENTER_LAT") ?: "51.5136").toDouble(),
+                centerLon = (System.getenv("CENTER_LON") ?: "7.4653").toDouble(),
+                bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble()
             )
         }
     }
