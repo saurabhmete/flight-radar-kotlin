@@ -1,10 +1,13 @@
 package org.ssm.flightradar.datasource
 
+import com.mongodb.client.model.Filters
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
 import org.litote.kmongo.reactivestreams.KMongo
 import com.mongodb.client.model.UpdateOptions
+import com.mongodb.client.model.Updates
 import org.ssm.flightradar.config.AppConfig
+import org.ssm.flightradar.domain.AircraftImageType
 import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
 
@@ -54,12 +57,16 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         )
     }
 
-    override suspend fun updateAircraftImage(callsign: String, aircraftImageUrl: String, aircraftImageType: String) {
+    override suspend fun updateAircraftImage(
+        callsign: String,
+        aircraftImageUrl: String,
+        aircraftImageType: AircraftImageType
+    ) {
         flights.updateOne(
-            filter = FlightCacheDocument::callsign eq callsign,
-            update = combine(
-                setValue(FlightCacheDocument::aircraftImageUrl, aircraftImageUrl),
-                setValue(FlightCacheDocument::aircraftImageType, aircraftImageType)
+            Filters.eq("callsign", callsign),
+            Updates.combine(
+                Updates.set("aircraftImageUrl", aircraftImageUrl),
+                Updates.set("aircraftImageType", aircraftImageType.name)
             )
         )
     }
