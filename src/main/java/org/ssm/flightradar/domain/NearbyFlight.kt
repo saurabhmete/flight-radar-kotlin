@@ -15,5 +15,20 @@ data class NearbyFlight(
     val departureName: String? = null,
 
     val arrival: String? = null,
-    val arrivalName: String? = null
+    val arrivalName: String? = null,
+
+    /**
+     * URL that the client can load directly (either a local static asset, or an external URL).
+     */
+    val aircraftImageUrl: String? = null,
+
+    /**
+     * Indicates whether [aircraftImageUrl] points to an exact aircraft photo or a generic silhouette.
+     */
+    val aircraftImageType: AircraftImageType? = null
 )
+
+enum class AircraftImageType {
+    EXACT,
+    SILHOUETTE
+}

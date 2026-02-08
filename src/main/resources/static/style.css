@@ -1,0 +1,143 @@
+:root {
+  --bg: #000000;
+  --text: #c8c8c8;
+  --muted: #7a7a7a;
+  --accent: #e0b86b;
+  --border: rgba(255,255,255,0.08);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+.container {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title {
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.primary {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.primary .img {
+  width: 90px;
+  height: 90px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.primary .img img {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  opacity: 0.85;
+  filter: grayscale(1);
+}
+
+.callsign {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.route {
+  margin-top: 6px;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.meta {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.secondary .row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.secondary .row .left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.secondary .row .cs {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.secondary .row .rt {
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.secondary .row .dist {
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.hint {
+  font-size: 12px;
+  color: rgba(255,255,255,0.35);
+}

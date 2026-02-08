@@ -9,7 +9,8 @@ import org.ssm.flightradar.util.Geo
 class FlightService(
     private val openSky: OpenSkyDataSource,
     private val mongo: FlightCacheRepository,
-    private val config: AppConfig
+    private val config: AppConfig,
+    private val enrichment: FlightEnrichmentService
 ) {
 
     private val centerLat = config.centerLat
@@ -20,6 +21,8 @@ class FlightService(
         maxDistanceKm: Double
     ): List<NearbyFlight> {
 
+        val nowEpoch = System.currentTimeMillis() / 1000
+
         val states = openSky.getStatesInBoundingBox(
             lamin = centerLat - config.bboxDeltaDeg,
             lomin = centerLon - config.bboxDeltaDeg,
@@ -27,7 +30,7 @@ class FlightService(
             lomax = centerLon + config.bboxDeltaDeg
         )
 
-        return states.mapNotNull { state ->
+        val base = states.mapNotNull { state ->
             val lat = state.lat ?: return@mapNotNull null
             val lon = state.lon ?: return@mapNotNull null
 
@@ -35,8 +38,6 @@ class FlightService(
                 Geo.haversineKm(centerLat, centerLon, lat, lon)
 
             if (distance > maxDistanceKm) return@mapNotNull null
-
-            val cached = mongo.getCachedFlight(state.callsign)
 
             NearbyFlight(
                 icao24 = state.icao24,
@@ -47,16 +48,13 @@ class FlightService(
                 lon = lon,
                 velocity = state.velocity,
 
-                distanceKm = distance,
-
-                departure = cached?.departure,
-                departureName = cached?.departureName,
-
-                arrival = cached?.arrival,
-                arrivalName = cached?.arrivalName
+                distanceKm = distance
             )
         }
             .sortedBy { it.distanceKm }
             .take(limit)
+
+        // Enrich only the limited set (avoid unnecessary external calls).
+        return base.map { enrichment.enrich(it, nowEpoch) }
     }
 }

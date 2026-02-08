@@ -29,5 +29,11 @@ data class NearbyFlightDto(
     val arrival: String? = null,
 
     @SerialName("arrival_name")
-    val arrivalName: String? = null
+    val arrivalName: String? = null,
+
+    @SerialName("aircraft_image_url")
+    val aircraftImageUrl: String? = null,
+
+    @SerialName("aircraft_image_type")
+    val aircraftImageType: String? = null
 )

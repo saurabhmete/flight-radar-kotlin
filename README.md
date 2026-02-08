@@ -1,6 +1,9 @@
 # Flight Radar (Kotlin / Ktor)
 
-A lightweight Kotlin backend that fetches live flight states from OpenSky, enriches them from a MongoDB cache, and exposes a small REST API suitable for low-power clients (ESP32 displays, Raspberry Pi dashboards, Android widgets).
+A lightweight Kotlin backend that fetches live flight states from OpenSky, enriches them best-effort with cached context, and exposes:
+
+- a small REST API for low-power clients (ESP32 displays, Raspberry Pi dashboards, Android widgets)
+- a simple OLED-friendly web dashboard usable from an old Android phone browser
 
 The project also includes a batch job that resolves missing arrival airports using OpenSky historical endpoints (limited to previous-day data).
 
@@ -22,6 +25,14 @@ OpenSky (history)  --->  Arrival batch job  --->  MongoDB cache
 ```
 
 ## API
+
+### OLED dashboard
+
+```
+GET /
+```
+
+Serves a dark, low-glare dashboard that refreshes every 15 seconds and shows up to 3 closest flights.
 
 ### Health
 
@@ -56,7 +67,9 @@ Example response:
       "departure": "EDDF",
       "departure_name": "Frankfurt Main",
       "arrival": "EDDM",
-      "arrival_name": "Munich"
+      "arrival_name": "Munich",
+      "aircraft_image_url": "/static/aircraft/plane.svg",
+      "aircraft_image_type": "SILHOUETTE"
     }
   ]
 }
