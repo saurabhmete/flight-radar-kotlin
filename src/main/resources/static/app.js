@@ -29,16 +29,14 @@ function renderPrimary(f) {
   const callsign = safeCallsignWithIcao(f);
   const route = routeText(f);
 
-  const alt = (f.altitude === null || f.altitude === undefined)
-    ? null
-    : Math.round(f.altitude);
+  const altFt = metersToFeet(f.altitude);
 
   const velocity = (f.velocity === null || f.velocity === undefined)
     ? null
     : Math.round(f.velocity * 3.6); // m/s -> km/h
 
   const metaParts = [];
-  if (alt !== null) metaParts.push(`${alt} m`);
+  if (altFt !== null) metaParts.push(`${altFt.toLocaleString()} ft`);
   if (velocity !== null) metaParts.push(`${velocity} km/h`);
   metaParts.push(fmtKm(f.distance_km));
 
@@ -54,6 +52,11 @@ function renderPrimary(f) {
       </div>
     </div>
   `;
+}
+
+function metersToFeet(m) {
+  if (m === null || m === undefined) return null;
+  return Math.round(m * 3.28084);
 }
 
 function renderSecondary(flights) {
