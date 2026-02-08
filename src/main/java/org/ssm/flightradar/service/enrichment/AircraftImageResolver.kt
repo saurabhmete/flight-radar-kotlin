@@ -1,25 +1,32 @@
 package org.ssm.flightradar.service.enrichment
 
-import org.ssm.flightradar.domain.AircraftImageType
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
 
-/**
- * Resolves an aircraft image for UI display.
- *
- * Current behaviour:
- * - Always returns a local silhouette (guaranteed, legal, and OLED-friendly).
- *
- * Future extension point:
- * - When we have reliable registration / type data, we can optionally resolve an exact photo
- *   from open-license sources (e.g. Wikimedia Commons) and cache only the URL.
- */
 class AircraftImageResolver(
-    private val silhouettePath: String = "/static/aircraft/plane.svg"
+    private val httpClient: HttpClient
 ) {
 
-    data class Image(val url: String, val type: AircraftImageType)
+    /**
+     * Best-effort image resolution using ICAO24 as identifier.
+     * Returns a URL if found, otherwise null.
+     */
+    suspend fun resolveByIcao24(icao24: String): String? {
+        val url = wikimediaUrl("$icao24.jpg")
+        return if (exists(url)) url else null
+    }
 
-    fun resolve(): Image = Image(
-        url = silhouettePath,
-        type = AircraftImageType.SILHOUETTE
-    )
+    private fun wikimediaUrl(file: String): String =
+        "https://commons.wikimedia.org/wiki/Special:FilePath/$file?width=240"
+
+    private suspend fun exists(url: String): Boolean {
+        return try {
+            val res: HttpResponse = httpClient.head(url)
+            res.status == HttpStatusCode.OK
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

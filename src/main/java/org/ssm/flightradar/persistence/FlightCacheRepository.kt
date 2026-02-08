@@ -1,5 +1,7 @@
 package org.ssm.flightradar.persistence
 
+import org.ssm.flightradar.domain.AircraftImageType
+
 interface FlightCacheRepository {
     suspend fun getCachedFlight(callsign: String): FlightCacheDocument?
 
@@ -23,7 +25,7 @@ interface FlightCacheRepository {
     suspend fun updateAircraftImage(
         callsign: String,
         aircraftImageUrl: String,
-        aircraftImageType: String
+        aircraftImageType: AircraftImageType
     )
 
     suspend fun findFlightsNeedingArrivalUpdate(

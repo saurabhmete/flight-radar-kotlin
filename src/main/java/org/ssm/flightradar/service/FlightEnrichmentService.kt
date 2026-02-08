@@ -7,6 +7,9 @@ import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.service.enrichment.AircraftImageResolver
 import org.ssm.flightradar.service.enrichment.RouteEnricher
 import org.ssm.flightradar.service.timeout.TimeoutRunner
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import org.ssm.flightradar.domain.AircraftImageType
 
 /**
  * Best-effort enrichment executed during request handling.
@@ -17,14 +20,15 @@ import org.ssm.flightradar.service.timeout.TimeoutRunner
  * - Cache both successes and "not found" to avoid hammering providers.
  */
 class FlightEnrichmentService(
-    private val openSky: OpenSkyDataSource,
+    openSky: OpenSkyDataSource,
     private val cache: FlightCacheRepository
 ) {
 
     private val log = LoggerFactory.getLogger(FlightEnrichmentService::class.java)
 
+    private val httpClient = HttpClient(CIO)
     private val routeEnricher = RouteEnricher(openSky)
-    private val imageResolver = AircraftImageResolver()
+    private val imageResolver = AircraftImageResolver(httpClient)
 
     private val routeTimeoutMs = 500L
 
@@ -45,14 +49,14 @@ class FlightEnrichmentService(
         // -------------------------
         // Route enrichment
         // -------------------------
-        val hasRoute = !cached?.departure.isNullOrBlank() && !cached?.arrival.isNullOrBlank()
+        val hasRoute = !cached?.departure.isNullOrBlank() && !cached.arrival.isNullOrBlank()
 
         if (hasRoute) {
             enriched = enriched.copy(
-                departure = cached?.departure,
-                departureName = cached?.departureName,
-                arrival = cached?.arrival,
-                arrivalName = cached?.arrivalName
+                departure = cached.departure,
+                departureName = cached.departureName,
+                arrival = cached.arrival,
+                arrivalName = cached.arrivalName
             )
         } else {
             val notFoundUntil = cached?.routeNotFoundUntilEpoch
@@ -93,28 +97,49 @@ class FlightEnrichmentService(
             }
         }
 
-        // -------------------------
-        // Aircraft image (local silhouette for now)
-        // -------------------------
-        val image = imageResolver.resolve()
-        enriched = enriched.copy(
-            aircraftImageUrl = image.url,
-            aircraftImageType = image.type
-        )
+// -------------------------
+// Aircraft image enrichment
+// -------------------------
+        val cachedImageUrl = cached?.aircraftImageUrl
+        val cachedImageType = cached?.aircraftImageType
 
-        // Cache the image fields once (cheap)
-        if (cached?.aircraftImageUrl.isNullOrBlank()) {
+        if (!cachedImageUrl.isNullOrBlank() && cachedImageType != null) {
+            val typeEnum = runCatching {
+                AircraftImageType.valueOf(cachedImageType)
+            }.getOrNull()
+
+            enriched = enriched.copy(
+                aircraftImageUrl = cachedImageUrl,
+                aircraftImageType = typeEnum
+            )
+        } else {
+            val resolvedUrl = TimeoutRunner.run(300L) {
+                imageResolver.resolveByIcao24(base.icao24)
+            }
+
+            val finalUrl = resolvedUrl ?: "/static/aircraft/plane.svg"
+            val finalType =
+                if (resolvedUrl != null) AircraftImageType.EXACT
+                else AircraftImageType.SILHOUETTE
+
+            enriched = enriched.copy(
+                aircraftImageUrl = finalUrl,
+                aircraftImageType = finalType
+            )
+
+            // Cache decision once
             try {
                 cache.updateAircraftImage(
                     callsign = base.callsign,
-                    aircraftImageUrl = image.url,
-                    aircraftImageType = image.type.name
+                    aircraftImageUrl = finalUrl,
+                    aircraftImageType = finalType
                 )
             } catch (t: Throwable) {
-                // Non-critical
                 log.debug("Failed to update aircraft image cache for {}", base.callsign, t)
             }
         }
+
+
 
         return enriched
     }
