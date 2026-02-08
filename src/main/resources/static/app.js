@@ -13,13 +13,20 @@ function routeText(f) {
   return `${dep} → ${arr}`;
 }
 
-function safeCallsign(f) {
-  return (f.callsign || '').trim() || 'UNKNOWN';
+function safeCallsignWithIcao(f) {
+  const cs = (f.callsign || '').trim();
+  const icao = (f.icao24 || '').trim();
+
+  if (cs && icao) return `${cs} · ${icao}`;
+  if (cs) return cs;
+  if (icao) return icao;
+
+  return 'UNKNOWN';
 }
 
 function renderPrimary(f) {
   const imgUrl = f.aircraft_image_url;
-  const callsign = safeCallsign(f);
+  const callsign = safeCallsignWithIcao(f);
   const route = routeText(f);
 
   const alt = (f.altitude === null || f.altitude === undefined)
@@ -56,7 +63,7 @@ function renderSecondary(flights) {
   }
 
   const rows = flights.map(f => {
-    const callsign = safeCallsign(f);
+    const callsign = safeCallsignWithIcao(f);
     const route = routeText(f);
     return `
       <div class="row">
