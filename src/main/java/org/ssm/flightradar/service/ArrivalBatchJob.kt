@@ -5,14 +5,14 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
-import org.ssm.flightradar.datasource.MongoProvider
-import org.ssm.flightradar.datasource.OpenSkyClient
+import org.ssm.flightradar.datasource.OpenSkyDataSource
+import org.ssm.flightradar.persistence.FlightCacheRepository
 import java.time.LocalDate
 import java.time.ZoneOffset
 
 class ArrivalBatchJob(
-    private val mongo: MongoProvider,
-    private val openSky: OpenSkyClient
+    private val mongo: FlightCacheRepository,
+    private val openSky: OpenSkyDataSource
 ) {
 
     private val log = LoggerFactory.getLogger(ArrivalBatchJob::class.java)

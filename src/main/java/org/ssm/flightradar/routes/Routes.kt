@@ -6,14 +6,15 @@ import io.ktor.server.routing.*
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.datasource.MongoProvider
 import org.ssm.flightradar.datasource.OpenSkyClient
-import org.ssm.flightradar.model.NearbyFlightsResponse
+import org.ssm.flightradar.api.dto.NearbyFlightsResponseDto
+import org.ssm.flightradar.api.mapper.toDto
 import org.ssm.flightradar.service.FlightService
 
 fun Application.registerRoutes(config: AppConfig) {
 
     val mongo = MongoProvider(config)
     val openSky = OpenSkyClient(config)
-    val service = FlightService(openSky, mongo)
+    val service = FlightService(openSky, mongo, config)
 
     routing {
         get("/health") {
@@ -25,8 +26,11 @@ fun Application.registerRoutes(config: AppConfig) {
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 3
                 val maxDistance = call.request.queryParameters["max_distance_km"]?.toDoubleOrNull() ?: 80.0
 
+                require(limit in 1..20) { "limit must be between 1 and 20" }
+                require(maxDistance in 1.0..500.0) { "max_distance_km must be between 1 and 500" }
+
                 val flights = service.nearby(limit, maxDistance)
-                call.respond(NearbyFlightsResponse(flights))
+                call.respond(NearbyFlightsResponseDto(flights.map { it.toDto() }))
             }
         }
     }
