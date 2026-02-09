@@ -18,6 +18,7 @@ class FlightService(
 
     private val MAX_DISTANCE_KM = 40.0
     private val MIN_ALTITUDE_METERS = 500.0
+    private val VISIBILITY_FACTOR = 0.25
 
     private val centerLat = config.centerLat
     private val centerLon = config.centerLon
@@ -73,7 +74,8 @@ class FlightService(
 
         // Distance to horizon (km)
         val horizonKm = 3.57 * sqrt(altitudeMeters)
+        val effectiveVisibilityKm = horizonKm * VISIBILITY_FACTOR
 
-        return distanceKm <= horizonKm
+        return distanceKm <= effectiveVisibilityKm
     }
 }
