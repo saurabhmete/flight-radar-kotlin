@@ -7,6 +7,8 @@ import org.ssm.flightradar.datasource.OpenSkyDataSource
 import org.ssm.flightradar.domain.FlightState
 import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
+import org.ssm.flightradar.service.enrichment.AircraftImageResolver
+import org.ssm.flightradar.service.enrichment.RouteEnricher
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -27,12 +29,35 @@ class FlightServiceTest {
         ): List<JsonObject> = emptyList()
     }
 
+    private class FakeRouteEnricher : RouteEnricher(
+        openSky = object : OpenSkyDataSource {
+            override suspend fun getFlightHistoryByCallsign(
+                callsign: String,
+                beginEpoch: Long,
+                endEpoch: Long
+            ) = emptyList()
+        }
+    )
+
+    private class FakeAircraftImageResolver : AircraftImageResolver {
+        override suspend fun resolve(
+            aircraftType: String?,
+            registration: String?
+        ) = null
+    }
+
     private class FakeCache(private val byCallsign: Map<String, FlightCacheDocument>) : FlightCacheRepository {
         override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? = byCallsign[callsign]
 
         override suspend fun findFlightsNeedingArrivalUpdate(yesterdayEpoch: Long): List<FlightCacheDocument> = emptyList()
         override suspend fun updateArrival(callsign: String, arrival: String, arrivalName: String?) = Unit
         override suspend fun incrementArrivalRetry(callsign: String) = Unit
+
+        override suspend fun upsertObservation(
+            icao24: String,
+            callsign: String?
+        ) {
+        }
     }
 
     @Test
@@ -68,10 +93,17 @@ class FlightServiceTest {
             )
         )
 
+        val enrichment = FlightEnrichmentService(
+            routeEnricher = FakeRouteEnricher(),
+            imageResolver = FakeAircraftImageResolver(),
+            clock = clock
+        )
+
         val service = FlightService(
-            openSky = FakeOpenSky(states),
-            mongo = FakeCache(cache),
-            config = config
+            openSky = fakeOpenSky,
+            cache = fakeCache,
+            enrichment = enrichment,
+            clock = clock
         )
 
         val result = service.nearby(limit = 1, maxDistanceKm = 500.0)

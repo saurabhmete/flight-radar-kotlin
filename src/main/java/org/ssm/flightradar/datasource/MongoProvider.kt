@@ -1,9 +1,13 @@
 package org.ssm.flightradar.datasource
 
+import com.mongodb.client.model.Filters
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
 import org.litote.kmongo.reactivestreams.KMongo
+import com.mongodb.client.model.UpdateOptions
+import com.mongodb.client.model.Updates
 import org.ssm.flightradar.config.AppConfig
+import org.ssm.flightradar.domain.AircraftImageType
 import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
 
@@ -19,6 +23,52 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
 
     override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? {
         return flights.findOne(FlightCacheDocument::callsign eq callsign)
+    }
+
+    override suspend fun upsertObservation(callsign: String, icao24: String, nowEpoch: Long) {
+        flights.updateOne(
+            filter = FlightCacheDocument::callsign eq callsign,
+            update = combine(
+                setOnInsert(FlightCacheDocument::callsign, callsign),
+                setOnInsert(FlightCacheDocument::icao24, icao24),
+                setOnInsert(FlightCacheDocument::firstSeenEpoch, nowEpoch),
+                setValue(FlightCacheDocument::lastSeenEpoch, nowEpoch),
+                setValue(FlightCacheDocument::cachedAtEpoch, nowEpoch)
+            ),
+            options = UpdateOptions().upsert(true)
+        )
+    }
+
+    override suspend fun updateRoute(
+        callsign: String,
+        departure: String?,
+        arrival: String?,
+        routeCheckedAtEpoch: Long,
+        routeNotFoundUntilEpoch: Long?
+    ) {
+        flights.updateOne(
+            filter = FlightCacheDocument::callsign eq callsign,
+            update = combine(
+                setValue(FlightCacheDocument::departure, departure),
+                setValue(FlightCacheDocument::arrival, arrival),
+                setValue(FlightCacheDocument::routeCheckedAtEpoch, routeCheckedAtEpoch),
+                setValue(FlightCacheDocument::routeNotFoundUntilEpoch, routeNotFoundUntilEpoch)
+            )
+        )
+    }
+
+    override suspend fun updateAircraftImage(
+        callsign: String,
+        aircraftImageUrl: String,
+        aircraftImageType: AircraftImageType
+    ) {
+        flights.updateOne(
+            Filters.eq("callsign", callsign),
+            Updates.combine(
+                Updates.set("aircraftImageUrl", aircraftImageUrl),
+                Updates.set("aircraftImageType", aircraftImageType.name)
+            )
+        )
     }
 
     /* =========================

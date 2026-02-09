@@ -14,5 +14,7 @@ fun NearbyFlight.toDto(): NearbyFlightDto = NearbyFlightDto(
     departure = departure,
     departureName = departureName,
     arrival = arrival,
-    arrivalName = arrivalName
+    arrivalName = arrivalName,
+    aircraftImageUrl = aircraftImageUrl,
+    aircraftImageType = aircraftImageType?.name
 )

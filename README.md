@@ -1,143 +1,225 @@
-# Flight Radar (Kotlin / Ktor)
+# Flight Radar — Physics‑Aware Personal Airspace Display
 
-A lightweight Kotlin backend that fetches live flight states from OpenSky, enriches them from a MongoDB cache, and exposes a small REST API suitable for low-power clients (ESP32 displays, Raspberry Pi dashboards, Android widgets).
+A **Kotlin / Ktor backend** that turns live ADS‑B data from **OpenSky** into a calm, night‑friendly airspace display.
+Unlike generic flight trackers, this system is **observer‑centric**: it shows **only aircraft that are physically visible from a fixed location**, based on distance, altitude, and line‑of‑sight physics.
 
-The project also includes a batch job that resolves missing arrival airports using OpenSky historical endpoints (limited to previous-day data).
+The primary use case is a **low‑glare OLED dashboard** (e.g. an old Android phone near a window), but the backend is cleanly structured and interview‑ready.
+
+---
+
+## Why this project exists
+
+Most flight trackers show *everything* in a radius.
+From a human perspective, that creates noise:
+
+- aircraft too low to see
+- aircraft technically nearby but below the horizon
+- constant clutter, especially at night
+
+This project answers a different question:
+
+> **“Which aircraft can I actually see from my window right now?”**
+
+The backend models this explicitly and returns **zero flights** when the sky is empty.
+
+---
+
+## Key ideas
+
+### 1. Fixed observer model
+The system is anchored to a **single observer location** (latitude / longitude).
+All visibility calculations are relative to this point.
+
+### 2. Physics‑based visibility
+An aircraft is considered *visible* only if **all** of the following hold:
+
+- distance ≤ configured maximum radius
+- altitude ≥ minimum altitude
+- distance ≤ geometric horizon distance
+
+Horizon distance is approximated by:
+
+```
+horizon_km ≈ 3.57 × √(altitude_m)
+```
+
+This eliminates false positives while remaining computationally cheap.
+
+### 3. Honest data handling
+If OpenSky cannot reliably provide route information for a live flight:
+- the backend returns `Unknown`
+- the UI shows it transparently
+- negative results are cached to avoid hammering external APIs
+
+No guessing, no fake certainty.
+
+---
 
 ## Features
 
-- Live "nearby flights" endpoint via OpenSky state vectors
-- MongoDB cache for departure/arrival enrichment
-- AWS SSM Parameter Store support for secrets (optional)
-- Batch job to resolve missing arrivals using yesterday's flight history
-- Structured error responses and basic query validation
+- **Live nearby flights** from OpenSky state vectors
+- **Physics‑aware visibility filtering**
+- **Best‑effort enrichment** (routes, aircraft images)
+- **MongoDB cache** for positive and negative enrichment results
+- **OLED‑friendly web dashboard** (pure black when no flights are visible)
+- **Systemd‑ready deployment** on small EC2 instances
 
-## High-level architecture
+---
+
+## High‑level architecture
 
 ```
-OpenSky (live states)  --->  Ktor API  --->  Client display
-                    \         |
-                     \        v
-OpenSky (history)  --->  Arrival batch job  --->  MongoDB cache
+             ┌───────────────┐
+             │   OpenSky     │
+             │  Live States  │
+             └───────┬───────┘
+                     │
+                     v
+            ┌──────────────────┐
+            │  FlightService   │
+            │  (visibility +  │
+            │   distance +    │
+            │   horizon)      │
+            └───────┬─────────┘
+                    │ visible flights only
+                    v
+        ┌──────────────────────────┐
+        │ FlightEnrichmentService  │
+        │  - route (best effort)   │
+        │  - aircraft image        │
+        │  - time‑boxed calls      │
+        └───────┬──────────────────┘
+                │
+                v
+          ┌──────────────┐
+          │  MongoDB     │
+          │  Cache       │
+          └──────────────┘
+                │
+                v
+        ┌────────────────────┐
+        │  Ktor REST API     │
+        └─────────┬──────────┘
+                  │
+                  v
+        ┌────────────────────┐
+        │ OLED / Browser UI  │
+        └────────────────────┘
 ```
+
+---
+
+## Visibility model (core logic)
+
+The backend only returns flights that satisfy:
+
+```
+distance_km <= MAX_DISTANCE_KM
+altitude_m  >= MIN_ALTITUDE_METERS
+distance_km <= 3.57 * sqrt(altitude_m)
+```
+
+Typical configuration (example):
+
+| Parameter | Value |
+|---------|------|
+| Max distance | 40 km |
+| Min altitude | 500 m |
+
+This keeps:
+- high‑altitude jets clearly visible
+- some lower aircraft when genuinely observable
+- everything else filtered out
+
+---
 
 ## API
 
-### Health
+### Dashboard
+```
+GET /
+```
+Serves a dark, low‑glare dashboard that refreshes every 15 seconds.
 
+If **no visible aircraft** exist, the screen stays completely black.
+
+### Health
 ```
 GET /health
 ```
 
-### Nearby flights
-
+### Nearby visible flights
 ```
-GET /api/flights/nearby?limit=3&max_distance_km=80
-```
-
-Query params:
-
-- `limit` (1..20, default 3)
-- `max_distance_km` (1..500, default 80)
-
-Example response:
-
-```json
-{
-  "flights": [
-    {
-      "icao24": "3c4b45",
-      "callsign": "DLH1234",
-      "altitude": 10300.0,
-      "lat": 51.52,
-      "lon": 7.42,
-      "velocity": 230.1,
-      "distance_km": 12.7,
-      "departure": "EDDF",
-      "departure_name": "Frankfurt Main",
-      "arrival": "EDDM",
-      "arrival_name": "Munich"
-    }
-  ]
-}
+GET /api/flights/nearby?limit=3
 ```
 
-Error response shape:
+Returns only **visible** flights (after all filtering).
 
-```json
-{ "error": "bad_request", "details": "limit must be between 1 and 20" }
-```
+---
 
-## Batch job
+## Aircraft images
 
-The arrival batch job resolves flights where `arrival` is missing in MongoDB.
+- Uses a **local silhouette** by default
+- Attempts best‑effort lookup (time‑boxed HTTP HEAD checks)
+- Results are cached (including "not found")
+- No images are stored locally or downloaded
 
-Important: OpenSky arrival data is most reliable for completed flights, so the job queries only yesterday's flight history.
-
-Run once:
-
-```bash
-./gradlew runArrivalJob
-```
+---
 
 ## Configuration
 
-Environment variables (all can be provided via env; some can also be loaded from AWS SSM):
+Environment variables:
 
-| Variable | Purpose | Default |
-|---|---|---|
+| Variable | Description | Default |
+|-------|------------|--------|
 | PORT | HTTP port | 8080 |
-| MONGO_URI | Mongo connection string | mongodb://localhost:27017 |
-| MONGO_DB | Mongo database name | flight_radar |
-| OPENSKY_CLIENT_ID | OpenSky OAuth client id | (required) |
-| OPENSKY_CLIENT_SECRET | OpenSky OAuth client secret | (required) |
-| CENTER_LAT | Center latitude for nearby search | 51.5136 |
-| CENTER_LON | Center longitude for nearby search | 7.4653 |
-| BBOX_DELTA_DEG | Bounding box half-size (degrees) | 1.0 |
+| MONGO_URI | MongoDB connection | mongodb://localhost:27017 |
+| MONGO_DB | Database name | flight_radar |
+| OPENSKY_CLIENT_ID | OpenSky OAuth client id | required |
+| OPENSKY_CLIENT_SECRET | OpenSky OAuth secret | required |
+| BBOX_DELTA_DEG | Bounding box half‑size | 1.0 |
 
-## Run locally
+Observer location is intentionally **hard‑coded** in `FlightService` to reflect a fixed physical installation.
 
-Prereqs:
+---
 
+## Running locally
+
+Requirements:
 - Java 17+
 - MongoDB
-
-Start API:
+- OpenSky API credentials
 
 ```bash
 ./gradlew run
 ```
 
-Call API:
-
-```bash
-curl "http://localhost:8080/api/flights/nearby?limit=3&max_distance_km=80"
-```
-
-## Project structure
+Open in browser:
 
 ```
-src/main/java/org/ssm/flightradar
-  Application.kt
-  ArrivalJobMain.kt
-
-  api/
-    dto/
-    mapper/
-
-  config/
-  datasource/
-  domain/
-  persistence/
-  routes/
-  service/
-  util/
+http://localhost:8080
 ```
 
-## Notes
+---
 
-- The OpenSky "states" endpoint returns callsigns padded with whitespace. The client trims callsigns before use.
-- The batch job sleeps between requests to be polite to rate limits.
+## Deployment
+
+Designed for:
+- small EC2 instances
+- systemd services
+- memory‑constrained environments
+
+---
+
+## What this demonstrates (for interviews)
+
+- translating a **real‑world physical problem** into backend logic
+- clear separation of concerns
+- defensive API design under unreliable external data
+- cache design with negative caching
+- pragmatic trade‑offs over over‑engineering
+
+---
 
 ## License
 

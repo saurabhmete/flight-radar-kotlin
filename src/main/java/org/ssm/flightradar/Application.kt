@@ -21,24 +21,27 @@ fun main() {
         install(CallLogging) {
             level = Level.INFO
         }
+
         install(ContentNegotiation) {
             json()
         }
+
         install(StatusPages) {
             exception<IllegalArgumentException> { call, cause ->
                 call.respond(
-                    status = HttpStatusCode.BadRequest,
-                    message = ErrorResponseDto(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponseDto(
                         error = "bad_request",
                         details = cause.message
                     )
                 )
             }
+
             exception<Throwable> { call, cause ->
                 call.application.environment.log.error("Unhandled error", cause)
                 call.respond(
-                    status = HttpStatusCode.InternalServerError,
-                    message = ErrorResponseDto(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponseDto(
                         error = "internal_error",
                         details = "Unexpected server error"
                     )
@@ -47,5 +50,6 @@ fun main() {
         }
 
         registerRoutes(config)
+
     }.start(wait = true)
 }
