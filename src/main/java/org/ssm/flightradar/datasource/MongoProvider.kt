@@ -96,24 +96,26 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         maxPerDay: Int
     ): Boolean {
 
-        val result = daily.findOneAndUpdate(
-            filter = and(
-                DailyCounterDocument::date eq utcDate,
-                or(
-                    DailyCounterDocument::count lt maxPerDay,
-                    DailyCounterDocument::count exists false
-                )
-            ),
+        // First ensure document exists with count=0
+        daily.updateOne(
+            filter = DailyCounterDocument::date eq utcDate,
             update = combine(
                 setOnInsert(DailyCounterDocument::date, utcDate),
-                setOnInsert(DailyCounterDocument::count, 0),
-                inc(DailyCounterDocument::count, 1)
+                setOnInsert(DailyCounterDocument::count, 0)
             ),
-            options = FindOneAndUpdateOptions()
-                .upsert(true)
-                .returnDocument(ReturnDocument.AFTER)
+            options = UpdateOptions().upsert(true)
         )
 
-        return result != null
+        // Now increment only if below max
+        val result = daily.updateOne(
+            filter = and(
+                DailyCounterDocument::date eq utcDate,
+                DailyCounterDocument::count lt maxPerDay
+            ),
+            update = inc(DailyCounterDocument::count, 1)
+        )
+
+        return result.modifiedCount == 1L
     }
+
 }
