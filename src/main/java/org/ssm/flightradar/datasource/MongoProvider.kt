@@ -1,5 +1,7 @@
 package org.ssm.flightradar.datasource
 
+import com.mongodb.client.model.FindOneAndUpdateOptions
+import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.UpdateOptions
 import org.bson.conversions.Bson
 import org.litote.kmongo.*
@@ -89,20 +91,29 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         )
     }
 
-    override suspend fun tryAcquireAeroApiSlot(utcDate: String, maxPerDay: Int): Boolean {
-        // Ensure doc exists
-        daily.updateOne(
-            filter = DailyCounterDocument::date eq utcDate,
-            update = setOnInsert(DailyCounterDocument::date, utcDate),
-            options = UpdateOptions().upsert(true)
+    override suspend fun tryAcquireAeroApiSlot(
+        utcDate: String,
+        maxPerDay: Int
+    ): Boolean {
+
+        val result = daily.findOneAndUpdate(
+            filter = and(
+                DailyCounterDocument::date eq utcDate,
+                or(
+                    DailyCounterDocument::count lt maxPerDay,
+                    DailyCounterDocument::count exists false
+                )
+            ),
+            update = combine(
+                setOnInsert(DailyCounterDocument::date, utcDate),
+                setOnInsert(DailyCounterDocument::count, 0),
+                inc(DailyCounterDocument::count, 1)
+            ),
+            options = FindOneAndUpdateOptions()
+                .upsert(true)
+                .returnDocument(ReturnDocument.AFTER)
         )
 
-        // Atomically increment if below max
-        val res = daily.updateOne(
-            filter = and(DailyCounterDocument::date eq utcDate, DailyCounterDocument::count lt maxPerDay),
-            update = inc(DailyCounterDocument::count, 1)
-        )
-
-        return res.matchedCount == 1L
+        return result != null
     }
 }
