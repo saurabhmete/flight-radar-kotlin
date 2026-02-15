@@ -91,26 +91,32 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         )
     }
 
-    override suspend fun tryAcquireAeroApiSlot(
-        utcDate: String,
-        maxPerDay: Int
-    ): Boolean {
-
-        val result = daily.findOneAndUpdate(
-            filter = and(
-                DailyCounterDocument::date eq utcDate,
-                DailyCounterDocument::count lt maxPerDay
-            ),
-            update = combine(
-                setOnInsert(DailyCounterDocument::date, utcDate),
-                setOnInsert(DailyCounterDocument::count, 0),
-                inc(DailyCounterDocument::count, 1)
-            ),
-            options = FindOneAndUpdateOptions()
-                .upsert(true)
-                .returnDocument(ReturnDocument.AFTER)
+    override suspend fun tryAcquireAeroApiSlot(utcDate: String, maxPerDay: Int): Boolean {
+        // One atomic operation:
+        // - Only allow increment if current count < maxPerDay OR count doesn't exist yet.
+        // - Use upsert so the doc can be created on first use.
+        val filter = and(
+            DailyCounterDocument::date eq utcDate,
+            or(
+                DailyCounterDocument::count lt maxPerDay,
+                DailyCounterDocument::count exists false
+            )
         )
 
-        return result != null
+        val update = combine(
+            setOnInsert(DailyCounterDocument::date, utcDate),
+            inc(DailyCounterDocument::count, 1)
+        )
+
+        val res = daily.updateOne(
+            filter = filter,
+            update = update,
+            options = UpdateOptions().upsert(true)
+        )
+
+        // matchedCount==1 => updated existing doc
+        // upsertedId!=null => inserted new doc
+        return res.matchedCount == 1L || res.upsertedId != null
     }
+
 }

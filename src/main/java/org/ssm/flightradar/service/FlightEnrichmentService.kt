@@ -8,6 +8,7 @@ import org.ssm.flightradar.datasource.AeroApiClient
 import org.ssm.flightradar.datasource.FlightWallCdnClient
 import org.ssm.flightradar.domain.AircraftImageType
 import org.ssm.flightradar.domain.NearbyFlight
+import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.service.enrichment.AircraftImageResolver
 import org.ssm.flightradar.service.timeout.TimeoutRunner
@@ -18,23 +19,19 @@ import java.time.format.DateTimeFormatter
 /**
  * Best-effort enrichment executed during request handling.
  *
- * Principles:
- * - No batch jobs.
+ * Principles (cost-aware):
  * - Paid calls are capped per-day (Mongo counter).
  * - Cache both successes and failures (negative cache).
  * - Prefer public CDN for labels where possible.
- *
- * Critical:
- * - Normalize callsign once (trim+uppercase) and use it everywhere as the cache key.
  */
 class FlightEnrichmentService(
     private val config: AppConfig,
     private val cache: FlightCacheRepository
 ) {
-
     private val log = LoggerFactory.getLogger(FlightEnrichmentService::class.java)
 
     private val httpClient = HttpClient(CIO)
+
     private val aeroApi = AeroApiClient(config)
     private val cdn = FlightWallCdnClient(config)
     private val imageResolver = AircraftImageResolver(httpClient)
@@ -43,53 +40,59 @@ class FlightEnrichmentService(
     private val utcDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 
     suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
-        val cleanCallsign = normalizeCallsign(base.callsign)
+        // Canonical callsign (OpenSky often pads/varies; always store + lookup canonical)
+        val callsign = base.callsign.trim().uppercase()
 
-        // Normalize callsign in returned object too (prevents future mismatches).
-        var enriched = base.copy(callsign = cleanCallsign)
+        // Use canonical callsign everywhere from this point
+        var flight = base.copy(callsign = callsign)
 
-        // Ensure doc exists (use normalized key)
-        cache.upsertObservation(cleanCallsign, base.icao24, nowEpoch)
+        // Ensure doc exists
+        cache.upsertObservation(callsign, flight.icao24, nowEpoch)
 
-        // Read cache using normalized key
-        val cached = cache.getCachedFlight(cleanCallsign)
+        val cached = cache.getCachedFlight(callsign)
 
-        // 1) Apply cached route & metadata if present
-        if (cached != null) {
-            enriched = enriched.copy(
-                departure = cached.departureIcao,
-                arrival = cached.arrivalIcao,
-                operatorIcao = cached.operatorIcao,
-                operatorName = cached.operatorName,
-                aircraftTypeIcao = cached.aircraftTypeIcao,
-                aircraftNameShort = cached.aircraftNameShort,
-                aircraftNameFull = cached.aircraftNameFull
-            )
+        // 1) Apply cached enrichment if present
+        flight = applyCache(flight, cached)
 
-            val cachedImageUrl = cached.aircraftImageUrl
-            val cachedImageType = cached.aircraftImageType
+        // 2) Operator name (cheap) via CDN using callsign prefix
+        flight = maybeEnrichOperatorNameFromCdn(flight)
 
-            if (!cachedImageUrl.isNullOrBlank() && !cachedImageType.isNullOrBlank()) {
-                val typeEnum = runCatching { AircraftImageType.valueOf(cachedImageType) }.getOrNull()
-                if (typeEnum != null) {
-                    enriched = enriched.copy(
-                        aircraftImageUrl = cachedImageUrl,
-                        aircraftImageType = typeEnum
-                    )
-                }
+        // 3) Route + aircraft type (paid) via AeroAPI (budget + negative cache)
+        flight = maybeEnrichFromAeroApi(flight, cached, nowEpoch)
+
+        // 4) Aircraft image (cheap)
+        flight = maybeEnrichAircraftImage(flight)
+
+        return flight
+    }
+
+    private fun applyCache(flight: NearbyFlight, cached: FlightCacheDocument?): NearbyFlight {
+        if (cached == null) return flight
+
+        var out = flight.copy(
+            departure = cached.departureIcao,
+            arrival = cached.arrivalIcao,
+            operatorIcao = cached.operatorIcao,
+            operatorName = cached.operatorName,
+            aircraftTypeIcao = cached.aircraftTypeIcao,
+            aircraftNameShort = cached.aircraftNameShort,
+            aircraftNameFull = cached.aircraftNameFull
+        )
+
+        val cachedImageUrl = cached.aircraftImageUrl
+        val cachedImageType = cached.aircraftImageType
+
+        if (!cachedImageUrl.isNullOrBlank() && !cachedImageType.isNullOrBlank()) {
+            val typeEnum = runCatching { AircraftImageType.valueOf(cachedImageType) }.getOrNull()
+            if (typeEnum != null) {
+                out = out.copy(
+                    aircraftImageUrl = cachedImageUrl,
+                    aircraftImageType = typeEnum
+                )
             }
         }
 
-        // 2) If operator name missing, try CDN using callsign prefix (cheap)
-        enriched = maybeEnrichOperatorNameFromCdn(enriched)
-
-        // 3) If route missing, try AeroAPI (paid) within budget and negative-cache
-        enriched = maybeEnrichFromAeroApi(enriched, cached, nowEpoch)
-
-        // 4) Aircraft image (cheap)
-        enriched = maybeEnrichAircraftImage(enriched)
-
-        return enriched
+        return out
     }
 
     private suspend fun maybeEnrichOperatorNameFromCdn(flight: NearbyFlight): NearbyFlight {
@@ -103,7 +106,7 @@ class FlightEnrichmentService(
         }
 
         if (name.isNullOrBlank()) {
-            // Persist operatorIcao at least (still useful)
+            // Still store operator_icao for UI even if name missing
             runCatching {
                 cache.updateEnrichment(
                     callsign = flight.callsign,
@@ -143,7 +146,7 @@ class FlightEnrichmentService(
 
     private suspend fun maybeEnrichFromAeroApi(
         flight: NearbyFlight,
-        cached: org.ssm.flightradar.persistence.FlightCacheDocument?,
+        cached: FlightCacheDocument?,
         nowEpoch: Long
     ): NearbyFlight {
         val alreadyHasRoute = !flight.departure.isNullOrBlank() && !flight.arrival.isNullOrBlank()
@@ -167,18 +170,13 @@ class FlightEnrichmentService(
 
         if (!hasBudget) return flight
 
-        // IMPORTANT: use normalized callsign already stored in flight.callsign
-        val ident = flight.callsign
-
-        log.info("AeroAPI attempt ident={} date={}", ident, utcDate)
-
         val info = TimeoutRunner.run(aeroTimeoutMs) {
-            aeroApi.fetchFlightInfo(ident)
+            // FlightAware expects IDENT; you’re using callsign (that’s okay as best-effort)
+            aeroApi.fetchFlightInfo(flight.callsign)
         }
 
         if (info == null) {
-            log.info("AeroAPI returned no info for ident={}", ident)
-
+            // Negative cache
             runCatching {
                 cache.updateEnrichment(
                     callsign = flight.callsign,
@@ -265,7 +263,4 @@ class FlightEnrichmentService(
         val prefix = cs.take(3)
         return if (prefix.all { it in 'A'..'Z' }) prefix else null
     }
-
-    private fun normalizeCallsign(callsign: String): String =
-        callsign.trim().uppercase()
 }
