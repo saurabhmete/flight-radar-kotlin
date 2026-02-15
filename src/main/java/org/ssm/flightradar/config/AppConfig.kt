@@ -107,8 +107,8 @@ data class AppConfig(
                 aeroApiNegativeCacheSeconds = (System.getenv("AEROAPI_NEGATIVE_CACHE_SECONDS") ?: "21600").toLong(), // 6h
                 aeroApiMaxAttemptsPerCallsign = (System.getenv("AEROAPI_MAX_ATTEMPTS_PER_CALLSIGN") ?: "1").toInt(),
 
-                centerLat = (System.getenv("CENTER_LAT") ?: "51.2895").toDouble(),
-                centerLon = (System.getenv("CENTER_LON") ?: "6.7668").toDouble(),
+                centerLat = (System.getenv("CENTER_LAT") ?: "51.5136").toDouble(),
+                centerLon = (System.getenv("CENTER_LON") ?: "7.4653").toDouble(),
                 bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble()
             )
         }
