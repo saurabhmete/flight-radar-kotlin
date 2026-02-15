@@ -16,8 +16,8 @@ class FlightService(
     private val HOME_LAT = 51.505122562296975
     private val HOME_LON = 7.466314232256936
 
-    private val MAX_DISTANCE_KM = 40.0
-    private val MIN_ALTITUDE_METERS = 500.0
+    private val MAX_DISTANCE_KM = 100.0
+    private val MIN_ALTITUDE_METERS = 0
     private val VISIBILITY_FACTOR = 0.25
 
     private val centerLat = config.centerLat
