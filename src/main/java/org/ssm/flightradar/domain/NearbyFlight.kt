@@ -17,6 +17,14 @@ data class NearbyFlight(
     val arrival: String? = null,
     val arrivalName: String? = null,
 
+    // Operator / aircraft metadata (best-effort)
+    val operatorIcao: String? = null,
+    val operatorName: String? = null,
+
+    val aircraftTypeIcao: String? = null,
+    val aircraftNameShort: String? = null,
+    val aircraftNameFull: String? = null,
+
     /**
      * URL that the client can load directly (either a local static asset, or an external URL).
      */

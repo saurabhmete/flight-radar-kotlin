@@ -1,13 +1,13 @@
 package org.ssm.flightradar.datasource
 
-import com.mongodb.client.model.Filters
+import com.mongodb.client.model.UpdateOptions
+import org.bson.conversions.Bson
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
 import org.litote.kmongo.reactivestreams.KMongo
-import com.mongodb.client.model.UpdateOptions
-import com.mongodb.client.model.Updates
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.domain.AircraftImageType
+import org.ssm.flightradar.persistence.DailyCounterDocument
 import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
 
@@ -15,11 +15,9 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
 
     private val client = KMongo.createClient(config.mongoUri).coroutine
     private val database = client.getDatabase(config.mongoDb)
-    private val flights = database.getCollection<FlightCacheDocument>("flights")
 
-    /* =========================
-       Used by REST API
-       ========================= */
+    private val flights = database.getCollection<FlightCacheDocument>("flights")
+    private val daily = database.getCollection<DailyCounterDocument>("daily_counters")
 
     override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? {
         return flights.findOne(FlightCacheDocument::callsign eq callsign)
@@ -39,70 +37,72 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         )
     }
 
-    override suspend fun updateRoute(
-        callsign: String,
-        departure: String?,
-        arrival: String?,
-        routeCheckedAtEpoch: Long,
-        routeNotFoundUntilEpoch: Long?
-    ) {
-        flights.updateOne(
-            filter = FlightCacheDocument::callsign eq callsign,
-            update = combine(
-                setValue(FlightCacheDocument::departure, departure),
-                setValue(FlightCacheDocument::arrival, arrival),
-                setValue(FlightCacheDocument::routeCheckedAtEpoch, routeCheckedAtEpoch),
-                setValue(FlightCacheDocument::routeNotFoundUntilEpoch, routeNotFoundUntilEpoch)
-            )
-        )
-    }
-
     override suspend fun updateAircraftImage(
         callsign: String,
         aircraftImageUrl: String,
         aircraftImageType: AircraftImageType
     ) {
         flights.updateOne(
-            Filters.eq("callsign", callsign),
-            Updates.combine(
-                Updates.set("aircraftImageUrl", aircraftImageUrl),
-                Updates.set("aircraftImageType", aircraftImageType.name)
-            )
-        )
-    }
-
-    /* =========================
-       Used by arrival batch job
-       ========================= */
-
-    override suspend fun findFlightsNeedingArrivalUpdate(
-        yesterdayEpoch: Long
-    ): List<FlightCacheDocument> {
-        return flights.find(
-            FlightCacheDocument::arrival eq null,
-            FlightCacheDocument::arrivalRetryCount lt 3,
-            FlightCacheDocument::firstSeenEpoch lte yesterdayEpoch
-        ).toList()
-    }
-
-    override suspend fun updateArrival(
-        callsign: String,
-        arrival: String,
-        arrivalName: String?
-    ) {
-        flights.updateOne(
             FlightCacheDocument::callsign eq callsign,
             combine(
-                setValue(FlightCacheDocument::arrival, arrival),
-                setValue(FlightCacheDocument::arrivalName, arrivalName)
+                setValue(FlightCacheDocument::aircraftImageUrl, aircraftImageUrl),
+                setValue(FlightCacheDocument::aircraftImageType, aircraftImageType.name)
             )
         )
     }
 
-    override suspend fun incrementArrivalRetry(callsign: String) {
+    override suspend fun updateEnrichment(
+        callsign: String,
+        departureIcao: String?,
+        arrivalIcao: String?,
+        operatorIcao: String?,
+        aircraftTypeIcao: String?,
+        operatorName: String?,
+        aircraftNameShort: String?,
+        aircraftNameFull: String?,
+        aeroApiCheckedAtEpoch: Long?,
+        aeroApiNotFoundUntilEpoch: Long?,
+        aeroApiAttemptCountDelta: Int
+    ) {
+        val updates = mutableListOf<Bson>()
+
+        if (departureIcao != null) updates += setValue(FlightCacheDocument::departureIcao, departureIcao)
+        if (arrivalIcao != null) updates += setValue(FlightCacheDocument::arrivalIcao, arrivalIcao)
+
+        if (operatorIcao != null) updates += setValue(FlightCacheDocument::operatorIcao, operatorIcao)
+        if (aircraftTypeIcao != null) updates += setValue(FlightCacheDocument::aircraftTypeIcao, aircraftTypeIcao)
+
+        if (operatorName != null) updates += setValue(FlightCacheDocument::operatorName, operatorName)
+        if (aircraftNameShort != null) updates += setValue(FlightCacheDocument::aircraftNameShort, aircraftNameShort)
+        if (aircraftNameFull != null) updates += setValue(FlightCacheDocument::aircraftNameFull, aircraftNameFull)
+
+        if (aeroApiCheckedAtEpoch != null) updates += setValue(FlightCacheDocument::aeroApiCheckedAtEpoch, aeroApiCheckedAtEpoch)
+        if (aeroApiNotFoundUntilEpoch != null) updates += setValue(FlightCacheDocument::aeroApiNotFoundUntilEpoch, aeroApiNotFoundUntilEpoch)
+
+        if (aeroApiAttemptCountDelta != 0) updates += inc(FlightCacheDocument::aeroApiAttemptCount, aeroApiAttemptCountDelta)
+
+        if (updates.isEmpty()) return
+
         flights.updateOne(
-            FlightCacheDocument::callsign eq callsign,
-            inc(FlightCacheDocument::arrivalRetryCount, 1)
+            filter = FlightCacheDocument::callsign eq callsign,
+            update = combine(updates)
         )
+    }
+
+    override suspend fun tryAcquireAeroApiSlot(utcDate: String, maxPerDay: Int): Boolean {
+        // Ensure doc exists
+        daily.updateOne(
+            filter = DailyCounterDocument::date eq utcDate,
+            update = setOnInsert(DailyCounterDocument::date, utcDate),
+            options = UpdateOptions().upsert(true)
+        )
+
+        // Atomically increment if below max
+        val res = daily.updateOne(
+            filter = and(DailyCounterDocument::date eq utcDate, DailyCounterDocument::count lt maxPerDay),
+            update = inc(DailyCounterDocument::count, 1)
+        )
+
+        return res.matchedCount == 1L
     }
 }

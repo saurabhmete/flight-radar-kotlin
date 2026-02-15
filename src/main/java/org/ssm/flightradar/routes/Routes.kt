@@ -16,7 +16,7 @@ fun Application.registerRoutes(config: AppConfig) {
 
     val mongo = MongoProvider(config)
     val openSky = OpenSkyClient(config)
-    val enrichment = FlightEnrichmentService(openSky, mongo)
+    val enrichment = FlightEnrichmentService(config, mongo)
     val service = FlightService(openSky, mongo, config, enrichment)
 
     routing {
