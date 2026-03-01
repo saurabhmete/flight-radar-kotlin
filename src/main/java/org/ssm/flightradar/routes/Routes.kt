@@ -11,12 +11,14 @@ import org.ssm.flightradar.api.dto.NearbyFlightsResponseDto
 import org.ssm.flightradar.api.mapper.toDto
 import org.ssm.flightradar.service.FlightService
 import org.ssm.flightradar.service.FlightEnrichmentService
+import org.ssm.flightradar.util.AirportLookupService
 
 fun Application.registerRoutes(config: AppConfig) {
 
     val mongo = MongoProvider(config)
     val openSky = OpenSkyClient(config)
-    val enrichment = FlightEnrichmentService(config, mongo)
+    val airportLookup = AirportLookupService()
+    val enrichment = FlightEnrichmentService(config, mongo, airportLookup)
     val service = FlightService(openSky, mongo, config, enrichment)
 
     routing {

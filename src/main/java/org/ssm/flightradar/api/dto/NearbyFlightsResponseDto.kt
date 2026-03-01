@@ -4,6 +4,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class NearbyFlightsResponseDto(
+    val flights: List<NearbyFlightDto>
+)
+@Serializable
 data class NearbyFlightDto(
     val icao24: String,
     val callsign: String,
