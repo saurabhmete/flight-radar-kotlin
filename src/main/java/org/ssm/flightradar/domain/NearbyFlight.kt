@@ -9,23 +9,23 @@ data class NearbyFlight(
     val velocity: Double?,
     val distanceKm: Double,
 
-    val departure: String?,
-    val departureName: String?,
-    val departureIata: String?,
+    val departure: String? = null,
+    val departureName: String? = null,
+    val departureIata: String? = null,
 
-    val arrival: String?,
-    val arrivalName: String?,
-    val arrivalIata: String?,
+    val arrival: String? = null,
+    val arrivalName: String? = null,
+    val arrivalIata: String? = null,
 
-    val operatorIcao: String?,
-    val operatorName: String?,
+    val operatorIcao: String? = null,
+    val operatorName: String? = null,
 
-    val aircraftTypeIcao: String?,
-    val aircraftNameShort: String?,
-    val aircraftNameFull: String?,
+    val aircraftTypeIcao: String? = null,
+    val aircraftNameShort: String? = null,
+    val aircraftNameFull: String? = null,
 
-    val aircraftImageUrl: String?,
-    val aircraftImageType: AircraftImageType?
+    val aircraftImageUrl: String? = null,
+    val aircraftImageType: AircraftImageType? = null
 )
 
 enum class AircraftImageType {
