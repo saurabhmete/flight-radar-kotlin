@@ -43,14 +43,6 @@ application {
     mainClass = "org.ssm.flightradar.ApplicationKt"
 }
 
-tasks.register<JavaExec>("runArrivalJob") {
-    group = "application"
-    description = "Runs the arrival batch job once (uses only yesterday's OpenSky data)."
-    classpath = sourceSets.main.get().runtimeClasspath
-    mainClass.set("org.ssm.flightradar.ArrivalJobMainKt")
-    args("arrival-job")
-}
-
 tasks.test {
     useJUnitPlatform()
 }

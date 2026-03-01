@@ -14,29 +14,36 @@ interface FlightCacheRepository {
         nowEpoch: Long
     )
 
-    suspend fun updateRoute(
-        callsign: String,
-        departure: String?,
-        arrival: String?,
-        routeCheckedAtEpoch: Long,
-        routeNotFoundUntilEpoch: Long?
-    )
-
     suspend fun updateAircraftImage(
         callsign: String,
         aircraftImageUrl: String,
         aircraftImageType: AircraftImageType
     )
 
-    suspend fun findFlightsNeedingArrivalUpdate(
-        yesterdayEpoch: Long
-    ): List<FlightCacheDocument>
-
-    suspend fun updateArrival(
+    /**
+     * Best-effort update of enriched metadata.
+     */
+    suspend fun updateEnrichment(
         callsign: String,
-        arrival: String,
-        arrivalName: String?
+        departureIcao: String?,
+        arrivalIcao: String?,
+        operatorIcao: String?,
+        aircraftTypeIcao: String?,
+        operatorName: String?,
+        aircraftNameShort: String?,
+        aircraftNameFull: String?,
+        aeroApiCheckedAtEpoch: Long?,
+        aeroApiNotFoundUntilEpoch: Long?,
+        aeroApiAttemptCountDelta: Int
     )
 
-    suspend fun incrementArrivalRetry(callsign: String)
+    /**
+     * Attempts to reserve one paid AeroAPI call for today. Returns true if allowed.
+     *
+     * This is the main cost guardrail.
+     */
+    suspend fun tryAcquireAeroApiSlot(
+        utcDate: String,
+        maxPerDay: Int
+    ): Boolean
 }

@@ -134,32 +134,5 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
         }
     }
 
-    /* =====================================
-       HISTORICAL FLIGHTS (arrival batch job)
-       ===================================== */
-
-    override suspend fun getFlightHistoryByCallsign(
-        callsign: String,
-        beginEpoch: Long,
-        endEpoch: Long
-    ): List<JsonObject> {
-
-        val token = ensureAccessToken()
-
-        val responseText = client.get(
-            "https://opensky-network.org/api/flights/callsign" +
-                    "?callsign=${callsign.trim()}" +
-                    "&begin=$beginEpoch" +
-                    "&end=$endEpoch"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }.bodyAsText()
-
-        val parsed = json.parseToJsonElement(responseText)
-
-        // API returns [] if no data
-        if (parsed !is JsonArray) return emptyList()
-
-        return parsed.map { it.jsonObject }
-    }
+    // Historical route lookup removed: we now enrich using AeroAPI + caching, with no batch jobs.
 }

@@ -7,10 +7,54 @@ function fmtKm(x) {
   return `${x.toFixed(1)} km`;
 }
 
+function formatAirport(code, iata, name) {
+  // Prefer IATA
+  const displayCode = (iata && iata.trim())
+      ? iata.trim()
+      : (code && code.trim())
+          ? code.trim()
+          : 'Unknown';
+
+  const cleanName = (name && name.trim())
+      ? name.trim()
+      : null;
+
+  return cleanName
+      ? `${displayCode} (${cleanName})`
+      : displayCode;
+}
+
 function routeText(f) {
-  const dep = f.departure ?? 'Unknown';
-  const arr = f.arrival ?? 'Unknown';
-  return `${dep} → ${arr}`;
+  function code(code, iata) {
+    return (iata && iata.trim())
+        ? iata.trim()
+        : (code && code.trim())
+            ? code.trim()
+            : 'Unknown';
+  }
+
+  function name(n) {
+    return (n && n.trim()) ? n.trim() : null;
+  }
+
+  const depCode = code(f.departure, f.departure_iata);
+  const arrCode = code(f.arrival, f.arrival_iata);
+
+  const depName = name(f.departure_name);
+  const arrName = name(f.arrival_name);
+
+  const codesLine = `${depCode} → ${arrCode}`;
+
+  // Only show second line if at least one name exists
+  if (depName || arrName) {
+    const namesLine = `${depName || depCode} → ${arrName || arrCode}`;
+    return `
+      <div class="route-codes">${codesLine}</div>
+      <div class="route-names">${namesLine}</div>
+    `;
+  }
+
+  return `<div class="route-codes">${codesLine}</div>`;
 }
 
 function safeCallsignWithIcao(f) {
@@ -29,6 +73,11 @@ function renderPrimary(f) {
   const callsign = safeCallsignWithIcao(f);
   const route = routeText(f);
 
+  const operator = (f.operator_name || f.operator_icao || '').trim();
+  const aircraft = (f.aircraft_name_short || f.aircraft_name_full || f.aircraft_type_icao || '').trim();
+  const labelParts = [operator, aircraft].filter(Boolean);
+  const labels = labelParts.length ? labelParts.join(' • ') : '';
+
   const altFt = metersToFeet(f.altitude);
 
   const velocity = (f.velocity === null || f.velocity === undefined)
@@ -43,13 +92,12 @@ function renderPrimary(f) {
   const meta = metaParts.filter(Boolean).join(' • ');
 
   primaryEl.innerHTML = `
-    <div class="primary-card">
-      <img class="plane" src="${imgUrl}" alt="aircraft" loading="lazy" />
-      <div class="primary-main">
-        <div class="callsign">${callsign}</div>
-        <div class="route">${route}</div>
-        <div class="meta">${meta}</div>
-      </div>
+    <div class="img"><img src="${imgUrl}" alt="aircraft" loading="lazy" /></div>
+    <div class="primary-main">
+      <div class="callsign">${callsign}</div>
+      ${labels ? `<div class="labels">${labels}</div>` : ''}
+      <div class="route">${route}</div>
+      <div class="meta">${meta}</div>
     </div>
   `;
 }
@@ -68,10 +116,16 @@ function renderSecondary(flights) {
   const rows = flights.map(f => {
     const callsign = safeCallsignWithIcao(f);
     const route = routeText(f);
+    const operator = (f.operator_name || f.operator_icao || '').trim();
+    const aircraft = (f.aircraft_name_short || f.aircraft_name_full || f.aircraft_type_icao || '').trim();
+    const labels = [operator, aircraft].filter(Boolean).join(' • ');
     return `
       <div class="row">
         <div class="cs">${callsign}</div>
-        <div class="rt">${route}</div>
+        <div class="rt">
+          <div>${route}</div>
+          ${labels ? `<div class="lbl">${labels}</div>` : ''}
+        </div>
         <div class="dist">${fmtKm(f.distance_km)}</div>
       </div>
     `;

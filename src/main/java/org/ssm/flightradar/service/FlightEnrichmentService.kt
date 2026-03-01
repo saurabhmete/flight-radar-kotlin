@@ -1,146 +1,274 @@
 package org.ssm.flightradar.service
 
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
 import org.slf4j.LoggerFactory
-import org.ssm.flightradar.datasource.OpenSkyDataSource
+import org.ssm.flightradar.config.AppConfig
+import org.ssm.flightradar.datasource.AeroApiClient
+import org.ssm.flightradar.datasource.FlightWallCdnClient
+import org.ssm.flightradar.domain.AircraftImageType
 import org.ssm.flightradar.domain.NearbyFlight
 import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.service.enrichment.AircraftImageResolver
-import org.ssm.flightradar.service.enrichment.RouteEnricher
 import org.ssm.flightradar.service.timeout.TimeoutRunner
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import org.ssm.flightradar.domain.AircraftImageType
+import org.ssm.flightradar.util.AirportLookupService
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /**
  * Best-effort enrichment executed during request handling.
  *
- * Principles:
- * - Never throw: if enrichment fails, we return the base flight.
- * - Always time-box external calls.
- * - Cache both successes and "not found" to avoid hammering providers.
+ * Principles (cost-aware):
+ * - No batch jobs.
+ * - Paid calls are capped per-day (Mongo counter).
+ * - Cache both successes and failures (negative cache).
+ * - Prefer public CDN for labels where possible.
  */
 class FlightEnrichmentService(
-    openSky: OpenSkyDataSource,
-    private val cache: FlightCacheRepository
+    private val config: AppConfig,
+    private val cache: FlightCacheRepository,
+    private val airportLookup: AirportLookupService
 ) {
 
     private val log = LoggerFactory.getLogger(FlightEnrichmentService::class.java)
 
     private val httpClient = HttpClient(CIO)
-    private val routeEnricher = RouteEnricher(openSky)
+
+    private val aeroApi = AeroApiClient(config)
+    private val cdn = FlightWallCdnClient(config)
     private val imageResolver = AircraftImageResolver(httpClient)
 
-    private val routeTimeoutMs = 500L
-
-    // How far back we look for callsign history. Keep small to reduce payloads.
-    private val historyLookbackSeconds = 6 * 60 * 60L
-
-    // If we couldn't resolve a route, don't retry for 24h.
-    private val routeNegativeCacheSeconds = 24 * 60 * 60L
+    private val aeroTimeoutMs = 900L
+    private val utcDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 
     suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
-        // Ensure we have a cache doc so we can store enrichment decisions.
-        cache.upsertObservation(base.callsign, base.icao24, nowEpoch)
+        // Always normalize callsign: OpenSky may contain padded spaces etc.
+        val cleanCallsign = base.callsign.trim().uppercase()
 
-        val cached = cache.getCachedFlight(base.callsign)
+        // Ensure doc exists
+        cache.upsertObservation(cleanCallsign, base.icao24, nowEpoch)
 
-        var enriched = base
+        // IMPORTANT: use clean callsign consistently (otherwise cache miss)
+        val cached = cache.getCachedFlight(cleanCallsign)
 
-        // -------------------------
-        // Route enrichment
-        // -------------------------
-        val hasRoute = !cached?.departure.isNullOrBlank() && !cached.arrival.isNullOrBlank()
+        var enriched = base.copy(callsign = cleanCallsign)
 
-        if (hasRoute) {
+        // 1) Apply cached route & metadata if present
+        if (cached != null) {
             enriched = enriched.copy(
-                departure = cached.departure,
-                departureName = cached.departureName,
-                arrival = cached.arrival,
-                arrivalName = cached.arrivalName
+                departure = cached.departureIcao,
+                arrival = cached.arrivalIcao,
+                operatorIcao = cached.operatorIcao,
+                operatorName = cached.operatorName,
+                aircraftTypeIcao = cached.aircraftTypeIcao,
+                aircraftNameShort = cached.aircraftNameShort,
+                aircraftNameFull = cached.aircraftNameFull
             )
-        } else {
-            val notFoundUntil = cached?.routeNotFoundUntilEpoch
-            val canTry = (notFoundUntil == null) || (nowEpoch >= notFoundUntil)
 
-            if (canTry) {
-                val begin = nowEpoch - historyLookbackSeconds
-                val route = TimeoutRunner.run(routeTimeoutMs) {
-                    routeEnricher.resolveRouteBestEffort(
-                        callsign = base.callsign,
-                        beginEpoch = begin,
-                        endEpoch = nowEpoch
-                    )
-                }
+            val cachedImageUrl = cached.aircraftImageUrl
+            val cachedImageType = cached.aircraftImageType
 
-                if (route != null) {
-                    cache.updateRoute(
-                        callsign = base.callsign,
-                        departure = route.departure,
-                        arrival = route.arrival,
-                        routeCheckedAtEpoch = nowEpoch,
-                        routeNotFoundUntilEpoch = null
-                    )
-
-                    enriched = enriched.copy(
-                        departure = route.departure,
-                        arrival = route.arrival
-                    )
-                } else {
-                    cache.updateRoute(
-                        callsign = base.callsign,
-                        departure = null,
-                        arrival = null,
-                        routeCheckedAtEpoch = nowEpoch,
-                        routeNotFoundUntilEpoch = nowEpoch + routeNegativeCacheSeconds
-                    )
-                }
+            if (!cachedImageUrl.isNullOrBlank() && cachedImageType != null) {
+                val typeEnum = runCatching { AircraftImageType.valueOf(cachedImageType) }.getOrNull()
+                enriched = enriched.copy(
+                    aircraftImageUrl = cachedImageUrl,
+                    aircraftImageType = typeEnum
+                )
             }
         }
 
-// -------------------------
-// Aircraft image enrichment
-// -------------------------
-        val cachedImageUrl = cached?.aircraftImageUrl
-        val cachedImageType = cached?.aircraftImageType
+        // 2) If operator name missing, try CDN using callsign prefix (cheap)
+        enriched = maybeEnrichOperatorNameFromCdn(enriched, cached, cleanCallsign)
 
-        if (!cachedImageUrl.isNullOrBlank() && cachedImageType != null) {
-            val typeEnum = runCatching {
-                AircraftImageType.valueOf(cachedImageType)
-            }.getOrNull()
+        // 3) If route missing, try AeroAPI (paid) within budget and negative-cache
+        enriched = maybeEnrichFromAeroApi(enriched, cached, nowEpoch, cleanCallsign)
 
-            enriched = enriched.copy(
-                aircraftImageUrl = cachedImageUrl,
-                aircraftImageType = typeEnum
+        // 3.5) Airport IATA + name lookup (local JSON, free)
+        enriched = applyAirportLookup(enriched)
+
+        // 4) Aircraft image (cheap)
+        enriched = maybeEnrichAircraftImage(enriched, cleanCallsign)
+
+        return enriched
+    }
+
+    private fun applyAirportLookup(flight: NearbyFlight): NearbyFlight {
+        var out = flight
+
+        val dep = airportLookup.findByIcao(flight.departure)
+        if (dep != null) {
+            out = out.copy(
+                departureName = dep.name,
+                departureIata = dep.iata  // can be null -> OK, frontend will fallback to ICAO
             )
-        } else {
-            val resolvedUrl = TimeoutRunner.run(300L) {
-                imageResolver.resolveByIcao24(base.icao24)
+        }
+
+        val arr = airportLookup.findByIcao(flight.arrival)
+        if (arr != null) {
+            out = out.copy(
+                arrivalName = arr.name,
+                arrivalIata = arr.iata
+            )
+        }
+
+        return out
+    }
+
+    private suspend fun maybeEnrichOperatorNameFromCdn(
+        flight: NearbyFlight,
+        cached: org.ssm.flightradar.persistence.FlightCacheDocument?,
+        cleanCallsign: String
+    ): NearbyFlight {
+        if (!flight.operatorName.isNullOrBlank()) return flight
+
+        val candidate = deriveOperatorIcaoCandidate(cleanCallsign) ?: return flight
+        val operatorIcao = flight.operatorIcao ?: candidate
+
+        val name = TimeoutRunner.run(250L) {
+            cdn.lookupAirlineNameFull(operatorIcao)
+        }
+
+        if (name.isNullOrBlank()) return flight.copy(operatorIcao = operatorIcao)
+
+        runCatching {
+            cache.updateEnrichment(
+                callsign = cleanCallsign,
+                departureIcao = null,
+                arrivalIcao = null,
+                operatorIcao = operatorIcao,
+                aircraftTypeIcao = null,
+                operatorName = name,
+                aircraftNameShort = null,
+                aircraftNameFull = null,
+                aeroApiCheckedAtEpoch = null,
+                aeroApiNotFoundUntilEpoch = null,
+                aeroApiAttemptCountDelta = 0
+            )
+        }
+
+        return flight.copy(operatorIcao = operatorIcao, operatorName = name)
+    }
+
+    private suspend fun maybeEnrichFromAeroApi(
+        flight: NearbyFlight,
+        cached: org.ssm.flightradar.persistence.FlightCacheDocument?,
+        nowEpoch: Long,
+        cleanCallsign: String
+    ): NearbyFlight {
+        val alreadyHasRoute = !flight.departure.isNullOrBlank() && !flight.arrival.isNullOrBlank()
+        if (alreadyHasRoute) return flight
+
+        val attempts = cached?.aeroApiAttemptCount ?: 0
+        if (attempts >= config.aeroApiMaxAttemptsPerCallsign) return flight
+
+        val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
+        val canTry = (notFoundUntil == null) || (nowEpoch >= notFoundUntil)
+        if (!canTry) return flight
+
+        val utcDate = utcDateFormatter.format(Instant.ofEpochSecond(nowEpoch))
+
+        val hasBudget = runCatching {
+            cache.tryAcquireAeroApiSlot(utcDate, config.maxAeroApiCallsPerDay)
+        }.getOrElse {
+            log.warn("AeroAPI slot acquisition failed (treat as no-budget) date={}", utcDate, it)
+            false
+        }
+
+        if (!hasBudget) return flight
+
+        val info = TimeoutRunner.run(aeroTimeoutMs) {
+            aeroApi.fetchFlightInfo(cleanCallsign)
+        }
+
+        if (info == null) {
+            // Negative cache
+            runCatching {
+                cache.updateEnrichment(
+                    callsign = cleanCallsign,
+                    departureIcao = null,
+                    arrivalIcao = null,
+                    operatorIcao = null,
+                    aircraftTypeIcao = null,
+                    operatorName = null,
+                    aircraftNameShort = null,
+                    aircraftNameFull = null,
+                    aeroApiCheckedAtEpoch = nowEpoch,
+                    aeroApiNotFoundUntilEpoch = nowEpoch + config.aeroApiNegativeCacheSeconds,
+                    aeroApiAttemptCountDelta = 1
+                )
             }
+            return flight
+        }
 
-            val finalUrl = resolvedUrl ?: "/static/aircraft/plane.svg"
-            val finalType =
-                if (resolvedUrl != null) AircraftImageType.EXACT
-                else AircraftImageType.SILHOUETTE
+        val operatorName = info.operatorIcao?.let { code ->
+            TimeoutRunner.run(250L) { cdn.lookupAirlineNameFull(code) }
+        }
 
-            enriched = enriched.copy(
+        val (acShort, acFull) = info.aircraftTypeIcao?.let { t ->
+            TimeoutRunner.run(250L) { cdn.lookupAircraftNames(t) }
+        } ?: (null to null)
+
+        runCatching {
+            cache.updateEnrichment(
+                callsign = cleanCallsign,
+                departureIcao = info.originIcao,
+                arrivalIcao = info.destinationIcao,
+                operatorIcao = info.operatorIcao,
+                aircraftTypeIcao = info.aircraftTypeIcao,
+                operatorName = operatorName,
+                aircraftNameShort = acShort,
+                aircraftNameFull = acFull,
+                aeroApiCheckedAtEpoch = nowEpoch,
+                aeroApiNotFoundUntilEpoch = null,
+                aeroApiAttemptCountDelta = 1
+            )
+        }
+
+        return flight.copy(
+            departure = info.originIcao ?: flight.departure,
+            arrival = info.destinationIcao ?: flight.arrival,
+            operatorIcao = info.operatorIcao ?: flight.operatorIcao,
+            operatorName = operatorName ?: flight.operatorName,
+            aircraftTypeIcao = info.aircraftTypeIcao ?: flight.aircraftTypeIcao,
+            aircraftNameShort = acShort ?: flight.aircraftNameShort,
+            aircraftNameFull = acFull ?: flight.aircraftNameFull
+        )
+    }
+
+    private suspend fun maybeEnrichAircraftImage(
+        flight: NearbyFlight,
+        cleanCallsign: String
+    ): NearbyFlight {
+        if (!flight.aircraftImageUrl.isNullOrBlank() && flight.aircraftImageType != null) return flight
+
+        val resolvedUrl = TimeoutRunner.run(300L) {
+            imageResolver.resolveByIcao24(flight.icao24)
+        }
+
+        val finalUrl = resolvedUrl ?: "/static/aircraft/plane.svg"
+        val finalType = if (resolvedUrl != null) AircraftImageType.EXACT else AircraftImageType.SILHOUETTE
+
+        runCatching {
+            cache.updateAircraftImage(
+                callsign = cleanCallsign,
                 aircraftImageUrl = finalUrl,
                 aircraftImageType = finalType
             )
-
-            // Cache decision once
-            try {
-                cache.updateAircraftImage(
-                    callsign = base.callsign,
-                    aircraftImageUrl = finalUrl,
-                    aircraftImageType = finalType
-                )
-            } catch (t: Throwable) {
-                log.debug("Failed to update aircraft image cache for {}", base.callsign, t)
-            }
+        }.onFailure {
+            log.debug("Failed to update aircraft image cache for {}", cleanCallsign, it)
         }
 
+        return flight.copy(
+            aircraftImageUrl = finalUrl,
+            aircraftImageType = finalType
+        )
+    }
 
-
-        return enriched
+    private fun deriveOperatorIcaoCandidate(callsign: String): String? {
+        val cs = callsign.trim().uppercase()
+        if (cs.length < 3) return null
+        val prefix = cs.take(3)
+        return if (prefix.all { it in 'A'..'Z' }) prefix else null
     }
 }

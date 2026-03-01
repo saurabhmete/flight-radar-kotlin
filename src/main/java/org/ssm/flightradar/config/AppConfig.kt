@@ -9,6 +9,18 @@ data class AppConfig(
     val openskyClientId: String,
     val openskyClientSecret: String,
 
+    // FlightAware AeroAPI
+    val aeroApiKey: String,
+    val aeroApiBaseUrl: String,
+
+    // Optional public CDN lookups (AxisNimble / TheFlightWall)
+    val flightWallCdnBaseUrl: String,
+
+    // Budget controls
+    val maxAeroApiCallsPerDay: Int,
+    val aeroApiNegativeCacheSeconds: Long,
+    val aeroApiMaxAttemptsPerCallsign: Int,
+
     /**
      * Center point for "nearby flights" queries.
      * Defaults to Dortmund (easy to override in deployments).
@@ -73,6 +85,27 @@ data class AppConfig(
                     envName = "OPENSKY_CLIENT_SECRET",
                     ssmName = "opensky_client_secret"
                 ),
+
+                aeroApiKey = secret(
+                    envName = "AEROAPI_KEY",
+                    ssmName = "/flight-radar/aeroapi/key"
+                ),
+
+                aeroApiBaseUrl = value(
+                    envName = "AEROAPI_BASE_URL",
+                    ssmName = "/flight-radar/aeroapi/base_url",
+                    default = "https://aeroapi.flightaware.com/aeroapi"
+                ),
+
+                flightWallCdnBaseUrl = value(
+                    envName = "FLIGHTWALL_CDN_BASE_URL",
+                    ssmName = "/flight-radar/flightwall/cdn_base_url",
+                    default = "https://cdn.theflightwall.com"
+                ),
+
+                maxAeroApiCallsPerDay = (System.getenv("AEROAPI_MAX_CALLS_PER_DAY") ?: "30").toInt(),
+                aeroApiNegativeCacheSeconds = (System.getenv("AEROAPI_NEGATIVE_CACHE_SECONDS") ?: "21600").toLong(), // 6h
+                aeroApiMaxAttemptsPerCallsign = (System.getenv("AEROAPI_MAX_ATTEMPTS_PER_CALLSIGN") ?: "1").toInt(),
 
                 centerLat = (System.getenv("CENTER_LAT") ?: "51.5136").toDouble(),
                 centerLon = (System.getenv("CENTER_LON") ?: "7.4653").toDouble(),

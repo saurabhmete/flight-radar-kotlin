@@ -3,28 +3,28 @@ package org.ssm.flightradar.domain
 data class NearbyFlight(
     val icao24: String,
     val callsign: String,
-
-    val altitude: Double? = null,
-    val lat: Double? = null,
-    val lon: Double? = null,
-    val velocity: Double? = null,
-
+    val altitude: Double?,
+    val lat: Double,
+    val lon: Double,
+    val velocity: Double?,
     val distanceKm: Double,
 
     val departure: String? = null,
     val departureName: String? = null,
+    val departureIata: String? = null,
 
     val arrival: String? = null,
     val arrivalName: String? = null,
+    val arrivalIata: String? = null,
 
-    /**
-     * URL that the client can load directly (either a local static asset, or an external URL).
-     */
+    val operatorIcao: String? = null,
+    val operatorName: String? = null,
+
+    val aircraftTypeIcao: String? = null,
+    val aircraftNameShort: String? = null,
+    val aircraftNameFull: String? = null,
+
     val aircraftImageUrl: String? = null,
-
-    /**
-     * Indicates whether [aircraftImageUrl] points to an exact aircraft photo or a generic silhouette.
-     */
     val aircraftImageType: AircraftImageType? = null
 )
 

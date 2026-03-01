@@ -84,6 +84,22 @@ html, body {
   color: var(--accent);
 }
 
+.route-codes {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.route-names {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.labels {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
 .meta {
   margin-top: 10px;
   font-size: 14px;
@@ -123,6 +139,12 @@ html, body {
 .secondary .row .rt {
   font-size: 14px;
   color: var(--accent);
+}
+
+.secondary .row .lbl {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .secondary .row .dist {
