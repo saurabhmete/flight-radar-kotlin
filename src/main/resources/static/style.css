@@ -84,6 +84,16 @@ html, body {
   color: var(--accent);
 }
 
+.route-codes {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.route-names {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
 .labels {
   margin-top: 6px;
   font-size: 14px;

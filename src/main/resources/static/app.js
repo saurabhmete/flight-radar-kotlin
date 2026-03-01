@@ -7,10 +7,54 @@ function fmtKm(x) {
   return `${x.toFixed(1)} km`;
 }
 
+function formatAirport(code, iata, name) {
+  // Prefer IATA
+  const displayCode = (iata && iata.trim())
+      ? iata.trim()
+      : (code && code.trim())
+          ? code.trim()
+          : 'Unknown';
+
+  const cleanName = (name && name.trim())
+      ? name.trim()
+      : null;
+
+  return cleanName
+      ? `${displayCode} (${cleanName})`
+      : displayCode;
+}
+
 function routeText(f) {
-  const dep = f.departure ?? 'Unknown';
-  const arr = f.arrival ?? 'Unknown';
-  return `${dep} → ${arr}`;
+  function code(code, iata) {
+    return (iata && iata.trim())
+        ? iata.trim()
+        : (code && code.trim())
+            ? code.trim()
+            : 'Unknown';
+  }
+
+  function name(n) {
+    return (n && n.trim()) ? n.trim() : null;
+  }
+
+  const depCode = code(f.departure, f.departure_iata);
+  const arrCode = code(f.arrival, f.arrival_iata);
+
+  const depName = name(f.departure_name);
+  const arrName = name(f.arrival_name);
+
+  const codesLine = `${depCode} → ${arrCode}`;
+
+  // Only show second line if at least one name exists
+  if (depName || arrName) {
+    const namesLine = `${depName || depCode} → ${arrName || arrCode}`;
+    return `
+      <div class="route-codes">${codesLine}</div>
+      <div class="route-names">${namesLine}</div>
+    `;
+  }
+
+  return `<div class="route-codes">${codesLine}</div>`;
 }
 
 function safeCallsignWithIcao(f) {

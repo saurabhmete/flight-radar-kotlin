@@ -78,10 +78,19 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
         if (aircraftNameShort != null) updates += setValue(FlightCacheDocument::aircraftNameShort, aircraftNameShort)
         if (aircraftNameFull != null) updates += setValue(FlightCacheDocument::aircraftNameFull, aircraftNameFull)
 
-        if (aeroApiCheckedAtEpoch != null) updates += setValue(FlightCacheDocument::aeroApiCheckedAtEpoch, aeroApiCheckedAtEpoch)
-        if (aeroApiNotFoundUntilEpoch != null) updates += setValue(FlightCacheDocument::aeroApiNotFoundUntilEpoch, aeroApiNotFoundUntilEpoch)
+        if (aeroApiCheckedAtEpoch != null) updates += setValue(
+            FlightCacheDocument::aeroApiCheckedAtEpoch,
+            aeroApiCheckedAtEpoch
+        )
+        if (aeroApiNotFoundUntilEpoch != null) updates += setValue(
+            FlightCacheDocument::aeroApiNotFoundUntilEpoch,
+            aeroApiNotFoundUntilEpoch
+        )
 
-        if (aeroApiAttemptCountDelta != 0) updates += inc(FlightCacheDocument::aeroApiAttemptCount, aeroApiAttemptCountDelta)
+        if (aeroApiAttemptCountDelta != 0) updates += inc(
+            FlightCacheDocument::aeroApiAttemptCount,
+            aeroApiAttemptCountDelta
+        )
 
         if (updates.isEmpty()) return
 
@@ -92,31 +101,26 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
     }
 
     override suspend fun tryAcquireAeroApiSlot(utcDate: String, maxPerDay: Int): Boolean {
-        // One atomic operation:
-        // - Only allow increment if current count < maxPerDay OR count doesn't exist yet.
-        // - Use upsert so the doc can be created on first use.
-        val filter = and(
-            DailyCounterDocument::date eq utcDate,
-            or(
-                DailyCounterDocument::count lt maxPerDay,
-                DailyCounterDocument::count exists false
-            )
-        )
-
-        val update = combine(
-            setOnInsert(DailyCounterDocument::date, utcDate),
-            inc(DailyCounterDocument::count, 1)
-        )
-
-        val res = daily.updateOne(
-            filter = filter,
-            update = update,
+        // 1) Ensure doc exists (important: also set count=0 on insert)
+        daily.updateOne(
+            filter = DailyCounterDocument::date eq utcDate,
+            update = combine(
+                setOnInsert(DailyCounterDocument::date, utcDate),
+                setOnInsert(DailyCounterDocument::count, 0)
+            ),
             options = UpdateOptions().upsert(true)
         )
 
-        // matchedCount==1 => updated existing doc
-        // upsertedId!=null => inserted new doc
-        return res.matchedCount == 1L || res.upsertedId != null
+        // 2) Atomically increment if below max
+        val res = daily.updateOne(
+            filter = and(
+                DailyCounterDocument::date eq utcDate,
+                DailyCounterDocument::count lt maxPerDay
+            ),
+            update = inc(DailyCounterDocument::count, 1)
+        )
+
+        return res.matchedCount == 1L
     }
 
 }

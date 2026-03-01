@@ -4,51 +4,30 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class NearbyFlightsResponseDto(
-    val flights: List<NearbyFlightDto>
-)
-
-@Serializable
 data class NearbyFlightDto(
     val icao24: String,
     val callsign: String,
+    val altitude: Double?,
+    val lat: Double,
+    val lon: Double,
+    val velocity: Double?,
+    @SerialName("distance_km") val distanceKm: Double,
 
-    val altitude: Double? = null,
-    val lat: Double? = null,
-    val lon: Double? = null,
-    val velocity: Double? = null,
+    val departure: String?,
+    @SerialName("departure_name") val departureName: String?,
+    @SerialName("departure_iata") val departureIata: String?,
 
-    @SerialName("distance_km")
-    val distanceKm: Double,
+    val arrival: String?,
+    @SerialName("arrival_name") val arrivalName: String?,
+    @SerialName("arrival_iata") val arrivalIata: String?,
 
-    val departure: String? = null,
+    @SerialName("operator_icao") val operatorIcao: String?,
+    @SerialName("operator_name") val operatorName: String?,
 
-    @SerialName("departure_name")
-    val departureName: String? = null,
+    @SerialName("aircraft_type_icao") val aircraftTypeIcao: String?,
+    @SerialName("aircraft_name_short") val aircraftNameShort: String?,
+    @SerialName("aircraft_name_full") val aircraftNameFull: String?,
 
-    val arrival: String? = null,
-
-    @SerialName("arrival_name")
-    val arrivalName: String? = null,
-
-    @SerialName("operator_icao")
-    val operatorIcao: String? = null,
-
-    @SerialName("operator_name")
-    val operatorName: String? = null,
-
-    @SerialName("aircraft_type_icao")
-    val aircraftTypeIcao: String? = null,
-
-    @SerialName("aircraft_name_short")
-    val aircraftNameShort: String? = null,
-
-    @SerialName("aircraft_name_full")
-    val aircraftNameFull: String? = null,
-
-    @SerialName("aircraft_image_url")
-    val aircraftImageUrl: String? = null,
-
-    @SerialName("aircraft_image_type")
-    val aircraftImageType: String? = null
+    @SerialName("aircraft_image_url") val aircraftImageUrl: String?,
+    @SerialName("aircraft_image_type") val aircraftImageType: String?
 )
