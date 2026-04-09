@@ -1,83 +1,34 @@
 package org.ssm.flightradar.datasource
 
 import io.ktor.client.*
-import io.ktor.client.call.body
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.forms.submitForm
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.domain.FlightState
-import java.util.concurrent.atomic.AtomicReference
+import java.util.Base64
 
 class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
 
     private val log = LoggerFactory.getLogger(OpenSkyClient::class.java)
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-    }
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(json)
-        }
+        install(ContentNegotiation) { json(json) }
     }
 
-    /* =========================
-       Token state (cached)
-       ========================= */
-
-    private val accessToken = AtomicReference<String?>(null)
-    private var tokenExpiresAtEpoch: Long = 0L
-
-    /* =========================
-       Auth (Client Credentials)
-       ========================= */
-
-    private suspend fun ensureAccessToken(): String? {
-        val now = System.currentTimeMillis() / 1000
-
-        val cached = accessToken.get()
-        if (cached != null && now < tokenExpiresAtEpoch - 60) {
-            return cached
-        }
-
-        return try {
-            val response = client.submitForm(
-                url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-                formParameters = Parameters.build {
-                    append("grant_type", "client_credentials")
-                    append("client_id", config.openskyClientId)
-                    append("client_secret", config.openskyClientSecret)
-                }
-            ).body<JsonObject>()
-
-            val token = response["access_token"]?.jsonPrimitive?.content
-            val expiresIn = response["expires_in"]?.jsonPrimitive?.longOrNull
-
-            if (token == null || expiresIn == null) {
-                log.warn("OpenSky auth response missing required fields")
-                return null
-            }
-
-            accessToken.set(token)
-            tokenExpiresAtEpoch = now + expiresIn
-            token
-        } catch (e: Exception) {
-            log.warn("OpenSky auth failed: {}", e.message)
-            null
-        }
+    // OpenSky now uses HTTP Basic Auth directly on the states endpoint.
+    // The old Keycloak OAuth flow (auth.opensky-network.org) is deprecated.
+    private val basicAuthHeader: String = run {
+        val credentials = "${config.openskyClientId}:${config.openskyClientSecret}"
+        "Basic ${Base64.getEncoder().encodeToString(credentials.toByteArray())}"
     }
-
-    /* =========================
-       LIVE STATES (used by API)
-       ========================= */
 
     override suspend fun getStatesInBoundingBox(
         lamin: Double,
@@ -85,18 +36,12 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
         lamax: Double,
         lomax: Double
     ): List<FlightState> {
-
-        val token = ensureAccessToken() ?: run {
-            log.warn("OpenSky auth unavailable, returning empty state list")
-            return emptyList()
-        }
-
         return try {
             val response: HttpResponse = client.get(
                 "https://opensky-network.org/api/states/all" +
                         "?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax"
             ) {
-                header(HttpHeaders.Authorization, "Bearer $token")
+                header(HttpHeaders.Authorization, basicAuthHeader)
             }
 
             if (response.status != HttpStatusCode.OK) {
@@ -110,12 +55,12 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
                 return emptyList()
             }
 
-            val responseText = response.bodyAsText()
-            val root = json.parseToJsonElement(responseText).jsonObject
-            val states = when (val statesElement = root["states"]) {
-                is JsonArray -> statesElement
+            val root = json.parseToJsonElement(response.bodyAsText()).jsonObject
+            val states = when (val el = root["states"]) {
+                is JsonArray -> el
                 else -> return emptyList()
             }
+
             /*
              OpenSky state array indices:
              0  -> icao24
@@ -125,10 +70,8 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
              7  -> baro_altitude
              9  -> velocity
             */
-
             states.mapNotNull { el ->
                 val arr = el.jsonArray
-
                 val callsignRaw = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val callsign = callsignRaw.trim()
                 if (callsign.isBlank()) return@mapNotNull null
@@ -147,6 +90,4 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
             emptyList()
         }
     }
-
-    // Historical route lookup removed: we now enrich using AeroAPI + caching, with no batch jobs.
 }
