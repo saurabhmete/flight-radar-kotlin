@@ -12,7 +12,7 @@ class FlightService(
     private val enrichment: FlightEnricher
 ) {
     private val MIN_ALTITUDE_METERS = 500.0
-    private val VISIBILITY_FACTOR = 0.25
+    private val VISIBILITY_FACTOR = 1.0
 
     suspend fun nearby(
         limit: Int,

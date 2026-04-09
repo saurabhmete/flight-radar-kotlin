@@ -149,7 +149,7 @@ async function load() {
   statusEl.textContent = 'fetching…';
 
   try {
-    const res = await fetch('/api/flights/nearby?limit=3&max_distance_km=120');
+    const res = await fetch('/api/flights/nearby?limit=3&max_distance_km=500');
 
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
