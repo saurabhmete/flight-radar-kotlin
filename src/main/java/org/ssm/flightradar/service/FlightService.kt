@@ -1,7 +1,6 @@
 package org.ssm.flightradar.service
 
 import org.ssm.flightradar.datasource.OpenSkyDataSource
-import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.domain.NearbyFlight
 import org.ssm.flightradar.util.Geo
@@ -9,51 +8,41 @@ import kotlin.math.sqrt
 
 class FlightService(
     private val openSky: OpenSkyDataSource,
-    private val mongo: FlightCacheRepository,
     private val config: AppConfig,
-    private val enrichment: FlightEnrichmentService
+    private val enrichment: FlightEnricher
 ) {
-    private val HOME_LAT = 51.505122562296975
-    private val HOME_LON = 7.466314232256936
-
-    private val MAX_DISTANCE_KM = 40.0
     private val MIN_ALTITUDE_METERS = 500.0
     private val VISIBILITY_FACTOR = 0.25
 
-    private val centerLat = config.centerLat
-    private val centerLon = config.centerLon
-
     suspend fun nearby(
         limit: Int,
+        maxDistanceKm: Double
     ): List<NearbyFlight> {
 
         val nowEpoch = System.currentTimeMillis() / 1000
 
         val states = openSky.getStatesInBoundingBox(
-            lamin = centerLat - config.bboxDeltaDeg,
-            lomin = centerLon - config.bboxDeltaDeg,
-            lamax = centerLat + config.bboxDeltaDeg,
-            lomax = centerLon + config.bboxDeltaDeg
+            lamin = config.centerLat - config.bboxDeltaDeg,
+            lomin = config.centerLon - config.bboxDeltaDeg,
+            lamax = config.centerLat + config.bboxDeltaDeg,
+            lomax = config.centerLon + config.bboxDeltaDeg
         )
 
         val base = states.mapNotNull { state ->
             val lat = state.lat ?: return@mapNotNull null
             val lon = state.lon ?: return@mapNotNull null
 
-            val distance =
-                Geo.haversineKm(HOME_LAT, HOME_LON, lat, lon)
+            val distance = Geo.haversineKm(config.homeLat, config.homeLon, lat, lon)
 
-            if (!isVisible(distance, state.altitude)) return@mapNotNull null
+            if (!isVisible(distance, state.altitude, maxDistanceKm)) return@mapNotNull null
 
             NearbyFlight(
                 icao24 = state.icao24,
                 callsign = state.callsign,
-
                 altitude = state.altitude,
                 lat = lat,
                 lon = lon,
                 velocity = state.velocity,
-
                 distanceKm = distance
             )
         }
@@ -66,11 +55,12 @@ class FlightService(
 
     private fun isVisible(
         distanceKm: Double,
-        altitudeMeters: Double?
+        altitudeMeters: Double?,
+        maxDistanceKm: Double
     ): Boolean {
         if (altitudeMeters == null) return false
         if (altitudeMeters < MIN_ALTITUDE_METERS) return false
-        if (distanceKm > MAX_DISTANCE_KM) return false
+        if (distanceKm > maxDistanceKm) return false
 
         // Distance to horizon (km)
         val horizonKm = 3.57 * sqrt(altitudeMeters)

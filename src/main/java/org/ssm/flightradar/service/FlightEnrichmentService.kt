@@ -29,7 +29,7 @@ class FlightEnrichmentService(
     private val config: AppConfig,
     private val cache: FlightCacheRepository,
     private val airportLookup: AirportLookupService
-) {
+) : FlightEnricher {
 
     private val log = LoggerFactory.getLogger(FlightEnrichmentService::class.java)
 
@@ -42,7 +42,7 @@ class FlightEnrichmentService(
     private val aeroTimeoutMs = 900L
     private val utcDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 
-    suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
+    override suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
         // Always normalize callsign: OpenSky may contain padded spaces etc.
         val cleanCallsign = base.callsign.trim().uppercase()
 

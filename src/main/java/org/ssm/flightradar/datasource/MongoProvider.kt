@@ -3,6 +3,7 @@ package org.ssm.flightradar.datasource
 import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.UpdateOptions
+import kotlinx.coroutines.runBlocking
 import org.bson.conversions.Bson
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
@@ -20,6 +21,12 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
 
     private val flights = database.getCollection<FlightCacheDocument>("flights")
     private val daily = database.getCollection<DailyCounterDocument>("daily_counters")
+
+    init {
+        runBlocking {
+            flights.ensureIndex(FlightCacheDocument::callsign)
+        }
+    }
 
     override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? {
         return flights.findOne(FlightCacheDocument::callsign eq callsign)

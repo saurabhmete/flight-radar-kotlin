@@ -4,6 +4,8 @@
   --muted: #7a7a7a;
   --accent: #e0b86b;
   --border: rgba(255,255,255,0.08);
+  --error-border: rgba(220,80,80,0.35);
+  --error-text: #d46060;
 }
 
 * { box-sizing: border-box; }
@@ -20,7 +22,7 @@ html, body {
   padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-height: 100%;
 }
 
@@ -42,17 +44,31 @@ html, body {
   color: var(--muted);
 }
 
+/* Loading pulse on status text */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.subtitle.loading {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* Primary flight card */
 .primary {
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px;
+  padding: 16px;
+}
+
+.flight-card {
   display: grid;
   grid-template-columns: 90px 1fr;
-  gap: 14px;
+  gap: 16px;
   align-items: center;
 }
 
-.primary .img {
+.flight-card .img {
   width: 90px;
   height: 90px;
   border-radius: 12px;
@@ -63,7 +79,7 @@ html, body {
   overflow: hidden;
 }
 
-.primary .img img {
+.flight-card .img img {
   width: 86px;
   height: 86px;
   object-fit: contain;
@@ -78,8 +94,14 @@ html, body {
   color: var(--text);
 }
 
+.labels {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .route {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 18px;
   color: var(--accent);
 }
@@ -94,21 +116,23 @@ html, body {
   opacity: 0.7;
 }
 
-.labels {
-  margin-top: 6px;
-  font-size: 14px;
-  color: var(--muted);
-}
-
 .meta {
   margin-top: 10px;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
+/* Divider between primary and secondary */
+.section-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 -2px;
+}
+
+/* Secondary flight rows */
 .secondary {
   display: flex;
   flex-direction: column;
@@ -119,21 +143,16 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   gap: 14px;
-}
-
-.secondary .row .left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
 }
 
 .secondary .row .cs {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .secondary .row .rt {
@@ -142,17 +161,65 @@ html, body {
 }
 
 .secondary .row .lbl {
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: 12px;
   color: var(--muted);
 }
 
 .secondary .row .dist {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
   white-space: nowrap;
+  text-align: right;
 }
 
+/* Empty state */
+.empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* Error card */
+.error-card {
+  padding: 20px;
+  border: 1px solid var(--error-border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.error-msg {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--error-text);
+}
+
+.error-detail {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.retry-btn {
+  margin-top: 6px;
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  color: var(--error-text);
+  font-size: 13px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.retry-btn:hover {
+  background: rgba(220,80,80,0.08);
+}
+
+/* Footer */
 .footer {
   margin-top: auto;
   padding-top: 10px;

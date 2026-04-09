@@ -8,7 +8,6 @@ function fmtKm(x) {
 }
 
 function formatAirport(code, iata, name) {
-  // Prefer IATA
   const displayCode = (iata && iata.trim())
       ? iata.trim()
       : (code && code.trim())
@@ -45,7 +44,6 @@ function routeText(f) {
 
   const codesLine = `${depCode} → ${arrCode}`;
 
-  // Only show second line if at least one name exists
   if (depName || arrName) {
     const namesLine = `${depName || depCode} → ${arrName || arrCode}`;
     return `
@@ -82,7 +80,7 @@ function renderPrimary(f) {
 
   const velocity = (f.velocity === null || f.velocity === undefined)
     ? null
-    : Math.round(f.velocity * 3.6); // m/s -> km/h
+    : Math.round(f.velocity * 3.6);
 
   const metaParts = [];
   if (altFt !== null) metaParts.push(`${altFt.toLocaleString()} ft`);
@@ -92,12 +90,14 @@ function renderPrimary(f) {
   const meta = metaParts.filter(Boolean).join(' • ');
 
   primaryEl.innerHTML = `
-    <div class="img"><img src="${imgUrl}" alt="aircraft" loading="lazy" /></div>
-    <div class="primary-main">
-      <div class="callsign">${callsign}</div>
-      ${labels ? `<div class="labels">${labels}</div>` : ''}
-      <div class="route">${route}</div>
-      <div class="meta">${meta}</div>
+    <div class="flight-card">
+      <div class="img"><img src="${imgUrl}" alt="aircraft" loading="lazy" /></div>
+      <div class="primary-main">
+        <div class="callsign">${callsign}</div>
+        ${labels ? `<div class="labels">${labels}</div>` : ''}
+        <div class="route">${route}</div>
+        <div class="meta">${meta}</div>
+      </div>
     </div>
   `;
 }
@@ -131,19 +131,35 @@ function renderSecondary(flights) {
     `;
   }).join('');
 
-  secondaryEl.innerHTML = `
-    <div class="secondary">
-      ${rows}
+  secondaryEl.innerHTML = `<div class="secondary">${rows}</div>`;
+}
+
+function renderError(message) {
+  primaryEl.innerHTML = `
+    <div class="error-card">
+      <div class="error-msg">No data available</div>
+      <div class="error-detail">${message}</div>
+      <button class="retry-btn" onclick="load()">Retry</button>
     </div>
   `;
 }
 
 async function load() {
-  try {
-    statusEl.textContent = 'fetching flights…';
+  statusEl.classList.add('loading');
+  statusEl.textContent = 'fetching…';
 
+  try {
     const res = await fetch('/api/flights/nearby?limit=3&max_distance_km=120');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body.details) detail = body.details;
+        else if (body.error) detail = body.error;
+      } catch (_) {}
+      throw new Error(detail);
+    }
 
     const data = await res.json();
     const flights = data.flights || [];
@@ -151,19 +167,20 @@ async function load() {
     if (flights.length === 0) {
       primaryEl.innerHTML = `<div class="empty">No flights nearby</div>`;
       secondaryEl.innerHTML = '';
-      statusEl.textContent = `updated ${new Date().toLocaleTimeString()}`;
-      return;
+    } else {
+      renderPrimary(flights[0]);
+      renderSecondary(flights.slice(1));
     }
-
-    renderPrimary(flights[0]);
-    renderSecondary(flights.slice(1));
 
     statusEl.textContent = `updated ${new Date().toLocaleTimeString()}`;
   } catch (e) {
-    statusEl.textContent = `error: ${e.message}`;
+    renderError(e.message);
+    statusEl.textContent = `unavailable · ${new Date().toLocaleTimeString()}`;
+    // Secondary data is preserved — don't clear it on transient errors
+  } finally {
+    statusEl.classList.remove('loading');
   }
 }
 
-// Refresh periodically, but no rotation (you asked no rotation).
 load();
 setInterval(load, 15000);

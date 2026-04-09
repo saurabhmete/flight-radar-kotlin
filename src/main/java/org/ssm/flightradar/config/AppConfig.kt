@@ -31,7 +31,14 @@ data class AppConfig(
     /**
      * Bounding box half-size in degrees (rough filter before distance calc).
      */
-    val bboxDeltaDeg: Double
+    val bboxDeltaDeg: Double,
+
+    /**
+     * Precise observer location used for visibility calculations.
+     * Separate from centerLat/centerLon which control the OpenSky bounding box.
+     */
+    val homeLat: Double,
+    val homeLon: Double
 ) {
     companion object {
 
@@ -109,7 +116,10 @@ data class AppConfig(
 
                 centerLat = (System.getenv("CENTER_LAT") ?: "51.5136").toDouble(),
                 centerLon = (System.getenv("CENTER_LON") ?: "7.4653").toDouble(),
-                bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble()
+                bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble(),
+
+                homeLat = (System.getenv("HOME_LAT") ?: "51.505122562296975").toDouble(),
+                homeLon = (System.getenv("HOME_LON") ?: "7.466314232256936").toDouble()
             )
         }
     }

@@ -34,6 +34,7 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:$logbackVersion")
 
     implementation("software.amazon.awssdk:ssm:2.25.30")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 
 
     testImplementation(kotlin("test"))

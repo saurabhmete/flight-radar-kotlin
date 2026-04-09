@@ -40,7 +40,7 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
        Auth (Client Credentials)
        ========================= */
 
-    private suspend fun ensureAccessToken(): String {
+    private suspend fun ensureAccessToken(): String? {
         val now = System.currentTimeMillis() / 1000
 
         val cached = accessToken.get()
@@ -48,25 +48,31 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
             return cached
         }
 
-        val response = client.submitForm(
-            url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-            formParameters = Parameters.build {
-                append("grant_type", "client_credentials")
-                append("client_id", config.openskyClientId)
-                append("client_secret", config.openskyClientSecret)
+        return try {
+            val response = client.submitForm(
+                url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+                formParameters = Parameters.build {
+                    append("grant_type", "client_credentials")
+                    append("client_id", config.openskyClientId)
+                    append("client_secret", config.openskyClientSecret)
+                }
+            ).body<JsonObject>()
+
+            val token = response["access_token"]?.jsonPrimitive?.content
+            val expiresIn = response["expires_in"]?.jsonPrimitive?.longOrNull
+
+            if (token == null || expiresIn == null) {
+                log.warn("OpenSky auth response missing required fields")
+                return null
             }
-        ).body<JsonObject>()
 
-        val token = response["access_token"]?.jsonPrimitive?.content
-            ?: error("OpenSky access_token missing")
-
-        val expiresIn = response["expires_in"]?.jsonPrimitive?.longOrNull
-            ?: error("OpenSky expires_in missing")
-
-        accessToken.set(token)
-        tokenExpiresAtEpoch = now + expiresIn
-
-        return token
+            accessToken.set(token)
+            tokenExpiresAtEpoch = now + expiresIn
+            token
+        } catch (e: Exception) {
+            log.warn("OpenSky auth failed: {}", e.message)
+            null
+        }
     }
 
     /* =========================
@@ -80,57 +86,65 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
         lomax: Double
     ): List<FlightState> {
 
-        val token = ensureAccessToken()
-
-        val response: HttpResponse = client.get(
-            "https://opensky-network.org/api/states/all" +
-                    "?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
-
-        if (response.status != HttpStatusCode.OK) {
-            log.warn("OpenSky states API failed: {}", response.status)
+        val token = ensureAccessToken() ?: run {
+            log.warn("OpenSky auth unavailable, returning empty state list")
             return emptyList()
         }
 
-        val contentType = response.headers[HttpHeaders.ContentType] ?: ""
-        if (!contentType.contains("application/json")) {
-            log.warn("OpenSky returned non-JSON response: {}", contentType)
-            return emptyList()
-        }
+        return try {
+            val response: HttpResponse = client.get(
+                "https://opensky-network.org/api/states/all" +
+                        "?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax"
+            ) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
 
-        val responseText = response.bodyAsText()
-        val root = json.parseToJsonElement(responseText).jsonObject
-        val states = when (val statesElement = root["states"]) {
-            is JsonArray -> statesElement
-            else -> return emptyList()
-        }
-        /*
-         OpenSky state array indices:
-         0  -> icao24
-         1  -> callsign (padded)
-         5  -> longitude
-         6  -> latitude
-         7  -> baro_altitude
-         9  -> velocity
-        */
+            if (response.status != HttpStatusCode.OK) {
+                log.warn("OpenSky states API failed: {}", response.status)
+                return emptyList()
+            }
 
-        return states.mapNotNull { el ->
-            val arr = el.jsonArray
+            val contentType = response.headers[HttpHeaders.ContentType] ?: ""
+            if (!contentType.contains("application/json")) {
+                log.warn("OpenSky returned non-JSON response: {}", contentType)
+                return emptyList()
+            }
 
-            val callsignRaw = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val callsign = callsignRaw.trim()
-            if (callsign.isBlank()) return@mapNotNull null
+            val responseText = response.bodyAsText()
+            val root = json.parseToJsonElement(responseText).jsonObject
+            val states = when (val statesElement = root["states"]) {
+                is JsonArray -> statesElement
+                else -> return emptyList()
+            }
+            /*
+             OpenSky state array indices:
+             0  -> icao24
+             1  -> callsign (padded)
+             5  -> longitude
+             6  -> latitude
+             7  -> baro_altitude
+             9  -> velocity
+            */
 
-            FlightState(
-                icao24 = arr[0].jsonPrimitive.content,
-                callsign = callsign,
-                lon = arr.getOrNull(5)?.jsonPrimitive?.doubleOrNull,
-                lat = arr.getOrNull(6)?.jsonPrimitive?.doubleOrNull,
-                altitude = arr.getOrNull(7)?.jsonPrimitive?.doubleOrNull,
-                velocity = arr.getOrNull(9)?.jsonPrimitive?.doubleOrNull
-            )
+            states.mapNotNull { el ->
+                val arr = el.jsonArray
+
+                val callsignRaw = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val callsign = callsignRaw.trim()
+                if (callsign.isBlank()) return@mapNotNull null
+
+                FlightState(
+                    icao24 = arr[0].jsonPrimitive.content,
+                    callsign = callsign,
+                    lon = arr.getOrNull(5)?.jsonPrimitive?.doubleOrNull,
+                    lat = arr.getOrNull(6)?.jsonPrimitive?.doubleOrNull,
+                    altitude = arr.getOrNull(7)?.jsonPrimitive?.doubleOrNull,
+                    velocity = arr.getOrNull(9)?.jsonPrimitive?.doubleOrNull
+                )
+            }
+        } catch (e: Exception) {
+            log.warn("OpenSky states fetch failed: {}", e.message)
+            emptyList()
         }
     }
 
