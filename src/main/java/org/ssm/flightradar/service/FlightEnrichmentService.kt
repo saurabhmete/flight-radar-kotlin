@@ -162,12 +162,18 @@ class FlightEnrichmentService(
         // Cooldown gate first: don't retry while we're still in the negative-cache window.
         val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
         val inCooldown = notFoundUntil != null && nowEpoch < notFoundUntil
-        if (inCooldown) return flight
+        if (inCooldown) {
+            log.info("AeroAPI skipped {} — in cooldown until {}", cleanCallsign, notFoundUntil)
+            return flight
+        }
 
         // Attempt cap second: once cooldown expires the count is checked, so attempts are
         // consumed across cooldown windows (maxAttempts=1 → one lifetime try, =2 → two, etc.).
         val attempts = cached?.aeroApiAttemptCount ?: 0
-        if (attempts >= config.aeroApiMaxAttemptsPerCallsign) return flight
+        if (attempts >= config.aeroApiMaxAttemptsPerCallsign) {
+            log.info("AeroAPI skipped {} — attempt cap reached ({}/{})", cleanCallsign, attempts, config.aeroApiMaxAttemptsPerCallsign)
+            return flight
+        }
 
         val utcDate = utcDateFormatter.format(Instant.ofEpochSecond(nowEpoch))
 
