@@ -184,7 +184,10 @@ class FlightEnrichmentService(
             false
         }
 
-        if (!hasBudget) return flight
+        if (!hasBudget) {
+            log.info("AeroAPI skipped {} — daily budget exhausted", cleanCallsign)
+            return flight
+        }
 
         val info = TimeoutRunner.run(aeroTimeoutMs) {
             aeroApi.fetchFlightInfo(cleanCallsign)
