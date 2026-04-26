@@ -88,12 +88,15 @@ class AeroApiClient(private val config: AppConfig) {
                 return null
             }
 
-            FlightInfo(
+            val info = FlightInfo(
                 operatorIcao = first.operatorIcao?.trim()?.takeIf { it.isNotBlank() },
                 aircraftTypeIcao = first.aircraftType?.trim()?.takeIf { it.isNotBlank() },
                 originIcao = first.origin?.codeIcao?.trim()?.takeIf { it.isNotBlank() },
                 destinationIcao = first.destination?.codeIcao?.trim()?.takeIf { it.isNotBlank() }
             )
+            log.info("AeroAPI ident={} origin={} dest={} operator={} aircraft={}",
+                ident, info.originIcao, info.destinationIcao, info.operatorIcao, info.aircraftTypeIcao)
+            info
         } catch (t: Throwable) {
             log.info("AeroAPI fetch exception ident={}: {}", ident, t.message)
             null
