@@ -1,212 +1,194 @@
-# Flight Radar --- Physics‑Aware Personal Airspace Display
+# Flight Radar — Physics-Aware Personal Airspace Display
 
-A production‑structured **Kotlin / Ktor backend** that transforms live
-ADS‑B state vectors from **OpenSky** into a calm, observer‑centric
-airspace display.
-
-Unlike generic flight trackers, this system answers a more human
-question:
+A **Kotlin / Ktor** backend that transforms live ADS-B state vectors from **OpenSky** into a calm, observer-centric airspace display — deployed on a Raspberry Pi 4 as a always-on wall display.
 
 > **"Which aircraft can I actually see from my window right now?"**
 
-This backend filters aircraft using geometric line‑of‑sight physics and
-returns **only flights that are physically visible from a fixed observer
-location**.
+Unlike generic flight trackers that show everything within a radius, this system filters aircraft using geometric line-of-sight physics and enriches each flight with route, operator, aircraft type, and a real photo — returning only what's physically visible from your location.
 
-Designed for: - OLED dashboards - Old Android phone near a window -
-Raspberry‑style wall displays - Clean backend architecture demos for
-interviews
+---
 
-------------------------------------------------------------------------
+## What It Looks Like
 
-# Core Concept
+- **Phone/tablet**: primary flight card expanded, two compact cards below with tap-to-expand accordion
+- **Desktop/TV**: three equal columns, each with a full aircraft photo, route, and stats
+- **OLED-optimised**: true black background, amber accent colour, minimal chrome
 
-Most trackers show everything within a radius.
+---
 
-This system instead models:
+## Core Concept
 
--   Fixed observer position
--   Geometric horizon distance
--   Minimum altitude threshold
--   Maximum practical viewing radius
+An aircraft is considered visible only if all three conditions hold:
 
-It returns **zero flights** when the sky is empty.
+```
+altitude_m      >= 500
+distance_km     <= MAX_DISTANCE_KM          (configurable, default 20 km)
+distance_km     <= 3.57 × √altitude_m       (geometric horizon)
+```
 
-No clutter. No noise.
+`3.57 × √h` approximates the horizon distance in km (h in metres). At 10 000 m cruise altitude this gives ~89 km theoretical line-of-sight; capped by `MAX_DISTANCE_KM` for practical "overhead" viewing (20 km ≈ 28° elevation — clearly visible from a window).
 
-------------------------------------------------------------------------
+Private and general aviation flights (non-ICAO-airline callsigns) are filtered out entirely.
 
-# Physics‑Aware Visibility Model
+---
 
-An aircraft is considered visible only if:
+## Architecture
 
-distance_km \<= MAX_DISTANCE_KM\
-altitude_m \>= MIN_ALTITUDE_METERS\
-distance_km \<= 3.57 \* sqrt(altitude_m)
+```
+OpenSky Network (ADS-B state vectors, OAuth 2.0)
+        ↓
+FlightService — physics filter, GA filter, observer distance
+        ↓  (parallel coroutines per flight)
+FlightEnrichmentService
+  ├── FlightWall CDN  — operator name (free)
+  ├── FlightAware AeroAPI  — route + aircraft type (budget-capped)
+  ├── AirportLookupService — ICAO → IATA + name (local JSON)
+  └── planespotters.net   — aircraft photo by ICAO24 (free)
+        ↓
+FerretDB (MongoDB-compatible) — positive + negative cache
+        ↓
+Ktor REST API  →  Responsive HTML/CSS/JS UI
+```
 
-Where:
+---
 
--   3.57 \* √h approximates horizon distance in km (h in meters)
--   MAX_DISTANCE_KM filters extreme long‑range objects
--   MIN_ALTITUDE_METERS removes low ground clutter
+## Features
 
-This balances realism with computational simplicity.
+**Backend**
+- Live ADS-B via OpenSky OAuth 2.0
+- Physics-based line-of-sight visibility filter
+- Airline-only filter (excludes GA registrations used as callsigns)
+- Parallel enrichment — all flights enriched concurrently
+- Aircraft photos from planespotters.net (real photos by ICAO24 hex)
+- Route + aircraft type from FlightAware AeroAPI with daily budget cap and negative caching
+- Airport ICAO → IATA + name from local `airports.json` (no API call)
+- All observer parameters configurable via environment variables
+- FerretDB/MongoDB caching — positive and negative results cached
 
-------------------------------------------------------------------------
+**Frontend**
+- Responsive layout: single column (mobile) → 3-column grid (desktop/TV)
+- Fluid typography via CSS `clamp()` — scales smoothly at every size
+- Accordion expand/collapse on mobile (tap any card to expand it)
+- Mini radar canvas in header showing live flight positions and headings
+- Aircraft silhouette SVG rotates by `true_track` heading
+- Aircraft photos displayed full-width without cropping (`object-fit: contain`)
+- Callsign + ICAO24 shown side by side
+- 15-second polling with `onerror` image fallback
 
-# Architecture
+---
 
-OpenSky (ADS‑B State Vectors)\
-↓\
-FlightService\
-(Distance + Horizon Filter)\
-↓\
-FlightEnrichmentService\
-(Route + Operator + Aircraft + Airport Mapping)\
-↓\
-Mongo Cache\
-↓\
-Ktor REST API\
-↓\
-OLED / Browser UI
+## API
 
-------------------------------------------------------------------------
+### `GET /`
+Redirects to the dashboard UI.
 
-# Backend Features
-
--   Live state vectors via OpenSky OAuth
--   Physics‑based visibility filtering
--   Best‑effort route enrichment (budget‑controlled)
--   Airport ICAO → IATA + name mapping (local JSON)
--   Aircraft image resolution (time‑boxed)
--   Positive + negative caching in MongoDB
--   Budget guardrails for paid APIs
--   Clean, testable service separation
-
-------------------------------------------------------------------------
-
-# Airport Mapping
-
-Uses a local airports.json file (in src/main/resources) to map:
-
--   ICAO → IATA
--   ICAO → airport name
-
-If IATA is missing: - UI automatically falls back to ICAO
-
-No external API calls required for airport display.
-
-------------------------------------------------------------------------
-
-# API
-
-## Dashboard
-
-GET /
-
-Serves a low‑glare OLED‑friendly UI.
-
-Refresh interval: 15 seconds.
-
-If no flights are visible, screen remains black.
-
-------------------------------------------------------------------------
-
-## Health Check
-
-GET /health
-
-Returns:
-
+### `GET /health`
+```json
 { "status": "ok" }
+```
 
-------------------------------------------------------------------------
+### `GET /api/flights/nearby`
+| Parameter | Description | Default |
+|---|---|---|
+| `limit` | Max flights to return | `3` |
+| `max_distance_km` | Override distance cap | from config |
 
-## Nearby Visible Flights
+Returns flights passing the visibility model, fully enriched.
 
-GET /api/flights/nearby?limit=3
+---
 
-Query Parameters:
+## Configuration
 
-Parameter         Description         Default
-  ----------------- ------------------- ---------
-limit             Number of flights   3
-max_distance_km   Max filter radius   80
+All values are read from environment variables (or AWS SSM Parameter Store if env is absent).
 
-Returns only flights that pass the visibility model.
+| Variable | Description | Default |
+|---|---|---|
+| `PORT` | HTTP port | `8080` |
+| `MONGO_URI` | FerretDB / MongoDB URI | `mongodb://localhost:27017` |
+| `MONGO_DB` | Database name | `flight_radar` |
+| `OPENSKY_CLIENT_ID` | OpenSky OAuth client ID | required |
+| `OPENSKY_CLIENT_SECRET` | OpenSky OAuth secret | required |
+| `AEROAPI_KEY` | FlightAware AeroAPI key | required |
+| `AEROAPI_BASE_URL` | AeroAPI base URL | `https://aeroapi.flightaware.com/aeroapi` |
+| `FLIGHTWALL_CDN_BASE_URL` | FlightWall CDN base | `https://cdn.theflightwall.com` |
+| `CENTER_LAT` | Observer latitude | `51.5136` |
+| `CENTER_LON` | Observer longitude | `7.4653` |
+| `BBOX_DELTA_DEG` | OpenSky bounding box half-size (°) | `1.0` |
+| `MAX_DISTANCE_KM` | Max distance to show a flight | `20.0` |
+| `AEROAPI_MAX_CALLS_PER_DAY` | Daily AeroAPI budget | `15` |
+| `AEROAPI_NEGATIVE_CACHE_SECONDS` | Don't retry failed lookups for N seconds | `86400` |
+| `AEROAPI_MAX_ATTEMPTS_PER_CALLSIGN` | Lifetime AeroAPI attempts per callsign | `2` |
 
-------------------------------------------------------------------------
+**Setting your location:** drop a pin at your address in Google Maps, copy the coordinates into `CENTER_LAT` / `CENTER_LON`.
 
-# Configuration
+---
 
-Environment variables:
+## Deployment (Raspberry Pi)
 
-Variable                Description               Default
-  ----------------------- ------------------------- ---------------------------
-PORT                    HTTP port                 8080
-MONGO_URI               MongoDB URI               mongodb://localhost:27017
-MONGO_DB                DB name                   flight_radar
-OPENSKY_CLIENT_ID       OpenSky OAuth client id   required
-OPENSKY_CLIENT_SECRET   OpenSky OAuth secret      required
-BBOX_DELTA_DEG          Bounding box half‑size    1.0
+OpenSky Network blocks cloud provider IPs (AWS, GCP). A Raspberry Pi on a residential ISP connection works reliably.
 
-Observer location is intentionally hard‑coded in FlightService to
-reflect a fixed installation.
+```bash
+# Build
+./gradlew installDist
 
-------------------------------------------------------------------------
+# Run
+PORT=8000 ./build/install/flight-radar/bin/flight-radar
+```
 
-# Running Locally
+**systemd service** (`/etc/systemd/system/flight-radar.service`):
+```ini
+[Unit]
+Description=Flight Radar Kotlin
+After=network.target ferretdb.service
+Wants=ferretdb.service
 
-Requirements:
+[Service]
+User=mete
+WorkingDirectory=/home/mete/flight-radar-kotlin
+EnvironmentFile=/etc/flight-radar.env
+ExecStart=/home/mete/flight-radar-kotlin/build/install/flight-radar/bin/flight-radar
+Restart=on-failure
+RestartSec=10
 
--   Java 17+
--   MongoDB
--   OpenSky credentials
+[Install]
+WantedBy=multi-user.target
+```
 
+**Deploy a new branch:**
+```bash
+sudo systemctl stop flight-radar
+git pull origin <branch>
+./gradlew installDist
+sudo systemctl start flight-radar
+```
+
+---
+
+## Running Locally
+
+Requirements: Java 17+, FerretDB or MongoDB, OpenSky + AeroAPI credentials.
+
+```bash
 ./gradlew run
+# Open http://localhost:8080
+```
 
-Open:
+---
 
-http://localhost:8080
+## Tech Stack
 
-------------------------------------------------------------------------
+| Layer | Technology |
+|---|---|
+| Language | Kotlin 2.0 |
+| HTTP server | Ktor 2.3 |
+| HTTP client | Ktor CIO |
+| Database | FerretDB (MongoDB-compatible) via KMongo |
+| Serialisation | kotlinx.serialization |
+| Build | Gradle 8 |
+| Frontend | Vanilla HTML / CSS / JS (no framework) |
 
-# Deployment
+---
 
-Designed for:
-
--   Small EC2 instances
--   systemd service
--   Low memory environments
--   Always‑on personal dashboards
-
-Typical memory footprint: \~200--300MB JVM
-
-------------------------------------------------------------------------
-
-# Design Philosophy
-
-This project demonstrates:
-
--   Translating a physical real‑world problem into backend logic
--   Observer‑centric modeling instead of radius spam
--   Defensive API design under unreliable external data
--   Budget‑aware enrichment logic
--   Negative caching strategy
--   Clean service separation without over‑engineering
-
-------------------------------------------------------------------------
-
-# Future Improvements
-
--   Airline logo CDN integration
--   Country flags by airport
--   WebSocket streaming instead of polling
--   Adaptive refresh intervals
--   Multi‑observer configuration support
-
-------------------------------------------------------------------------
-
-# License
+## License
 
 MIT
