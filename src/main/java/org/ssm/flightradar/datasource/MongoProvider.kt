@@ -1,8 +1,10 @@
 package org.ssm.flightradar.datasource
 
 import com.mongodb.client.model.FindOneAndUpdateOptions
+import com.mongodb.client.model.IndexOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.UpdateOptions
+import kotlinx.coroutines.runBlocking
 import org.bson.conversions.Bson
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
@@ -20,6 +22,16 @@ class MongoProvider(config: AppConfig) : FlightCacheRepository {
 
     private val flights = database.getCollection<FlightCacheDocument>("flights")
     private val daily = database.getCollection<DailyCounterDocument>("daily_counters")
+
+    init {
+        // Unique index on date makes the upsert in tryAcquireAeroApiSlot truly atomic —
+        // without it, concurrent requests can create duplicate date documents and bypass the cap.
+        runBlocking {
+            runCatching {
+                daily.ensureUniqueIndex(DailyCounterDocument::date)
+            }
+        }
+    }
 
     override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? {
         return flights.findOne(FlightCacheDocument::callsign eq callsign)
