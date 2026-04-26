@@ -251,7 +251,7 @@ class FlightEnrichmentService(
     ): NearbyFlight {
         if (flight.aircraftImageType == AircraftImageType.EXACT) return flight
 
-        val resolvedUrl = TimeoutRunner.run(1500L) {
+        val resolvedUrl = TimeoutRunner.run(600L) {
             imageResolver.resolveByIcao24(flight.icao24)
         }
 
