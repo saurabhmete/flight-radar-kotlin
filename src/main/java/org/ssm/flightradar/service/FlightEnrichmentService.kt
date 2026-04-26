@@ -159,6 +159,12 @@ class FlightEnrichmentService(
         val alreadyHasRoute = !flight.departure.isNullOrBlank() && !flight.arrival.isNullOrBlank()
         if (alreadyHasRoute) return flight
 
+        // Don't waste AeroAPI budget on GA/private registrations.
+        val looksLikeAirline = cleanCallsign.length >= 4
+            && cleanCallsign.take(3).all { it.isLetter() }
+            && cleanCallsign[3].isDigit()
+        if (!looksLikeAirline) return flight
+
         // Cooldown gate first: don't retry while we're still in the negative-cache window.
         val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
         val inCooldown = notFoundUntil != null && nowEpoch < notFoundUntil

@@ -47,6 +47,7 @@ class FlightService(
                 Geo.haversineKm(HOME_LAT, HOME_LON, lat, lon)
 
             if (!isVisible(distance, state.altitude)) return@mapNotNull null
+            if (!isAirlineFlight(state.callsign)) return@mapNotNull null
 
             NearbyFlight(
                 icao24 = state.icao24,
@@ -68,6 +69,13 @@ class FlightService(
         return coroutineScope {
             base.map { async { enrichment.enrich(it, nowEpoch) } }.awaitAll()
         }
+    }
+
+    // Airline callsigns: 3-letter ICAO operator code followed by a digit (e.g. DLH123, WZZ7XN).
+    // GA/private registrations (e.g. DEACV, DFSRT) have a letter at position 4.
+    private fun isAirlineFlight(callsign: String): Boolean {
+        if (callsign.length < 4) return false
+        return callsign.take(3).all { it.isLetter() } && callsign[3].isDigit()
     }
 
     private fun isVisible(
