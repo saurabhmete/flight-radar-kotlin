@@ -160,7 +160,8 @@ function statsHtml(f) {
 // Full card (primary on all screens, all cards on desktop)
 function fullCard(f) {
   const { src, cls, rot } = imgAttrs(f);
-  const cs  = esc((f.callsign || f.icao24 || '').trim());
+  const cs   = esc((f.callsign || '').trim() || (f.icao24 || '').trim());
+  const icao = esc((f.icao24 || '').trim());
   const op  = (f.operator_name || '').trim();
   const ac  = (f.aircraft_name_short || f.aircraft_name_full || f.aircraft_type_icao || '').trim();
   const dep = code(f.departure_iata, f.departure);
@@ -173,7 +174,10 @@ function fullCard(f) {
     <div class="card-img"><img class="${cls}" src="${src}" alt=""${rot}/></div>
     <div class="card-body">
       <div class="card-head">
-        <span class="callsign">${cs}</span>
+        <div class="cs-row">
+          <span class="callsign">${cs}</span>
+          ${icao ? `<span class="icao24">${icao}</span>` : ''}
+        </div>
         ${ac ? `<span class="aircraft-type">${esc(ac)}</span>` : ''}
       </div>
       ${op ? `<div class="operator-name">${esc(op)}</div>` : ''}
@@ -197,7 +201,8 @@ function fullCard(f) {
 // Compact card (secondary on mobile/tablet)
 function compactCard(f) {
   const { src, cls, rot } = imgAttrs(f);
-  const cs   = esc((f.callsign || f.icao24 || '').trim());
+  const cs   = esc((f.callsign || '').trim() || (f.icao24 || '').trim());
+  const icao = esc((f.icao24 || '').trim());
   const dep  = code(f.departure_iata, f.departure);
   const arr  = code(f.arrival_iata,   f.arrival);
   const op   = (f.operator_name || '').trim();
@@ -209,6 +214,7 @@ function compactCard(f) {
     <div class="info">
       <div class="compact-top">
         <span class="cs-sm">${cs}</span>
+        ${icao ? `<span class="icao24-sm">${icao}</span>` : ''}
         ${dep && arr ? `<span class="route-compact">${esc(dep)} → ${esc(arr)}</span>` : ''}
         <span class="km">${esc(kmStr(f.distance_km))}</span>
       </div>

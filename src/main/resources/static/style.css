@@ -148,6 +148,27 @@ html, body {
   gap: 8px;
 }
 
+.cs-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.icao24 {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(11px, 1.4vw, 14px);
+  color: var(--text2);
+  letter-spacing: 0.04em;
+}
+
+.icao24-sm {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(10px, 1.2vw, 12px);
+  color: var(--text2);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
 .callsign {
   font-size: var(--fs-cs);
   font-weight: 700;
