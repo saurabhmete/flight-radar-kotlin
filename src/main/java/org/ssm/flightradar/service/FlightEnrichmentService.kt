@@ -39,7 +39,7 @@ class FlightEnrichmentService(
     private val cdn = FlightWallCdnClient(config)
     private val imageResolver = AircraftImageResolver(httpClient)
 
-    private val aeroTimeoutMs = 900L
+    private val aeroTimeoutMs = 3000L
     private val utcDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 
     suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
