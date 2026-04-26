@@ -126,13 +126,15 @@ function drawRadar(flights) {
     const track = f.true_track != null ? f.true_track : bearing;
     drawRadarPlane(ctx, fx, fy, track, size * 0.042, idx === 0);
 
-    // Callsign label
+    // Callsign label — anchor based on quadrant to avoid overlap with icon
     const label = (f.callsign || f.icao24 || '').trim();
     ctx.fillStyle = idx === 0 ? 'rgba(224,184,107,0.95)' : 'rgba(180,180,180,0.7)';
     ctx.font = `${Math.round(size * 0.033)}px monospace`;
-    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, fx + size * 0.04, fy);
+    const offset = size * 0.045;
+    const rightHalf = fx >= cx;
+    ctx.textAlign = rightHalf ? 'left' : 'right';
+    ctx.fillText(label, fx + (rightHalf ? offset : -offset), fy);
   });
 }
 

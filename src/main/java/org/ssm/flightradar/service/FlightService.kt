@@ -1,5 +1,8 @@
 package org.ssm.flightradar.service
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.ssm.flightradar.datasource.OpenSkyDataSource
 import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.config.AppConfig
@@ -61,8 +64,10 @@ class FlightService(
             .sortedBy { it.distanceKm }
             .take(limit)
 
-        // Enrich only the limited set (avoid unnecessary external calls).
-        return base.map { enrichment.enrich(it, nowEpoch) }
+        // Enrich in parallel — each flight makes independent external calls.
+        return coroutineScope {
+            base.map { async { enrichment.enrich(it, nowEpoch) } }.awaitAll()
+        }
     }
 
     private fun isVisible(
