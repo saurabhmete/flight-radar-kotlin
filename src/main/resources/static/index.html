@@ -2,27 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="color-scheme" content="dark"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
   <title>Flight Radar</title>
   <link rel="stylesheet" href="/static/style.css"/>
 </head>
 <body>
-  <main class="container">
+  <div class="page">
     <header class="header">
-      <div class="title">Flight Radar</div>
-      <div class="subtitle" id="status">loading…</div>
+      <div class="header-left">
+        <div class="wordmark">FLIGHT RADAR</div>
+        <div class="tagline" id="status">loading…</div>
+      </div>
+      <canvas id="radar" class="radar"></canvas>
     </header>
 
-    <section class="primary" id="primary"></section>
-
-    <section class="secondary" id="secondary"></section>
-
-    <footer class="footer">
-      <div class="hint">Tip: set phone brightness to minimum + Night Light. OLED true black background.</div>
-    </footer>
-  </main>
-
+    <main id="flights" class="flights"></main>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

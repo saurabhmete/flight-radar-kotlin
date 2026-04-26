@@ -12,5 +12,6 @@ data class FlightState(
     val lat: Double?,
     val lon: Double?,
     val altitude: Double?,
-    val velocity: Double?
+    val velocity: Double?,
+    val trueTrack: Double?
 )

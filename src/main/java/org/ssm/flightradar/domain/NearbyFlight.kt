@@ -7,6 +7,7 @@ data class NearbyFlight(
     val lat: Double,
     val lon: Double,
     val velocity: Double?,
+    val trueTrack: Double?,
     val distanceKm: Double,
 
     val departure: String? = null,

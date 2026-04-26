@@ -28,10 +28,11 @@ data class AppConfig(
     val centerLat: Double,
     val centerLon: Double,
 
-    /**
-     * Bounding box half-size in degrees (rough filter before distance calc).
-     */
-    val bboxDeltaDeg: Double
+    /** Bounding box half-size in degrees (rough pre-filter before distance calc). */
+    val bboxDeltaDeg: Double,
+
+    /** Hard cap on how far a flight can be and still appear (km). */
+    val maxDistanceKm: Double
 ) {
     companion object {
 
@@ -109,7 +110,8 @@ data class AppConfig(
 
                 centerLat = (System.getenv("CENTER_LAT") ?: "51.5136").toDouble(),
                 centerLon = (System.getenv("CENTER_LON") ?: "7.4653").toDouble(),
-                bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble()
+                bboxDeltaDeg = (System.getenv("BBOX_DELTA_DEG") ?: "1.0").toDouble(),
+                maxDistanceKm = (System.getenv("MAX_DISTANCE_KM") ?: "20.0").toDouble()
             )
         }
     }

@@ -39,7 +39,7 @@ class FlightEnrichmentService(
     private val cdn = FlightWallCdnClient(config)
     private val imageResolver = AircraftImageResolver(httpClient)
 
-    private val aeroTimeoutMs = 900L
+    private val aeroTimeoutMs = 3000L
     private val utcDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 
     suspend fun enrich(base: NearbyFlight, nowEpoch: Long): NearbyFlight {
@@ -159,12 +159,27 @@ class FlightEnrichmentService(
         val alreadyHasRoute = !flight.departure.isNullOrBlank() && !flight.arrival.isNullOrBlank()
         if (alreadyHasRoute) return flight
 
-        val attempts = cached?.aeroApiAttemptCount ?: 0
-        if (attempts >= config.aeroApiMaxAttemptsPerCallsign) return flight
+        // Don't waste AeroAPI budget on GA/private registrations.
+        val looksLikeAirline = cleanCallsign.length >= 4
+            && cleanCallsign.take(3).all { it.isLetter() }
+            && cleanCallsign[3].isDigit()
+        if (!looksLikeAirline) return flight
 
+        // Cooldown gate first: don't retry while we're still in the negative-cache window.
         val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
-        val canTry = (notFoundUntil == null) || (nowEpoch >= notFoundUntil)
-        if (!canTry) return flight
+        val inCooldown = notFoundUntil != null && nowEpoch < notFoundUntil
+        if (inCooldown) {
+            log.info("AeroAPI skipped {} — in cooldown until {}", cleanCallsign, notFoundUntil)
+            return flight
+        }
+
+        // Attempt cap second: once cooldown expires the count is checked, so attempts are
+        // consumed across cooldown windows (maxAttempts=1 → one lifetime try, =2 → two, etc.).
+        val attempts = cached?.aeroApiAttemptCount ?: 0
+        if (attempts >= config.aeroApiMaxAttemptsPerCallsign) {
+            log.info("AeroAPI skipped {} — attempt cap reached ({}/{})", cleanCallsign, attempts, config.aeroApiMaxAttemptsPerCallsign)
+            return flight
+        }
 
         val utcDate = utcDateFormatter.format(Instant.ofEpochSecond(nowEpoch))
 
@@ -175,7 +190,10 @@ class FlightEnrichmentService(
             false
         }
 
-        if (!hasBudget) return flight
+        if (!hasBudget) {
+            log.info("AeroAPI skipped {} — daily budget exhausted", cleanCallsign)
+            return flight
+        }
 
         val info = TimeoutRunner.run(aeroTimeoutMs) {
             aeroApi.fetchFlightInfo(cleanCallsign)
@@ -240,9 +258,9 @@ class FlightEnrichmentService(
         flight: NearbyFlight,
         cleanCallsign: String
     ): NearbyFlight {
-        if (!flight.aircraftImageUrl.isNullOrBlank() && flight.aircraftImageType != null) return flight
+        if (flight.aircraftImageType == AircraftImageType.EXACT) return flight
 
-        val resolvedUrl = TimeoutRunner.run(300L) {
+        val resolvedUrl = TimeoutRunner.run(600L) {
             imageResolver.resolveByIcao24(flight.icao24)
         }
 

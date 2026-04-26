@@ -1,165 +1,408 @@
-:root {
-  --bg: #000000;
-  --text: #c8c8c8;
-  --muted: #7a7a7a;
-  --accent: #e0b86b;
-  --border: rgba(255,255,255,0.08);
-}
+/* ── Reset & design tokens ───────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-* { box-sizing: border-box; }
+:root {
+  --bg:      #000;
+  --surface: #0c0c0c;
+  --dim:     #111;
+  --text:    #e2e2e2;
+  --text2:   #5a5a5a;
+  --text3:   #8a8a8a;
+  --accent:  #f0a020;
+  --border:  rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.04);
+  --r:       16px;
+
+  /* Fluid scale — everything derives from viewport width */
+  --fs-cs:    clamp(22px, 4.8vw, 48px);   /* callsign */
+  --fs-route: clamp(16px, 3.2vw, 34px);   /* AMS → JFK */
+  --fs-label: clamp(11px, 1.4vw, 15px);   /* operator / aircraft */
+  --fs-stat:  clamp(11px, 1.3vw, 14px);   /* 35 000 ft · 890 km/h */
+  --fs-tag:   clamp(10px, 1.1vw, 12px);   /* wordmark / status */
+  --img-h:    clamp(110px, 17vw, 240px);  /* card photo height */
+  --pad:      clamp(14px, 2.2vw, 26px);   /* card body padding */
+  --gap:      clamp(10px, 1.4vw, 20px);   /* layout gaps */
+}
 
 html, body {
   height: 100%;
-  margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+               'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
 }
 
-.container {
-  padding: 18px;
+/* ── Page shell ─────────────────────────────────── */
+.page {
+  min-height: 100dvh;
+  padding: 20px 16px 32px;
+  max-width: 460px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  min-height: 100%;
+  gap: var(--gap);
 }
 
+@media (min-width: 640px) {
+  .page { max-width: 620px; padding: 28px 24px 40px; }
+}
+
+@media (min-width: 1024px) {
+  .page { max-width: 1300px; padding: 32px 40px 52px; }
+}
+
+@media (min-width: 1440px) {
+  .page { max-width: 1520px; padding: 44px 64px 64px; }
+}
+
+/* ── Header ─────────────────────────────────────── */
 .header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.title {
-  font-size: 18px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.subtitle {
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.primary {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 14px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.primary .img {
-  width: 90px;
-  height: 90px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.03);
+.header-left { display: flex; flex-direction: column; gap: 4px; }
+
+.wordmark {
+  font-size: var(--fs-tag);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.tagline {
+  font-size: var(--fs-tag);
+  color: var(--text2);
+}
+
+.radar { border-radius: 50%; flex-shrink: 0; display: block; }
+
+/* ── Flights ─────────────────────────────────────── */
+.flights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  flex: 1;
+}
+
+/* 3-column grid on desktop — JS renders all as primary cards */
+@media (min-width: 1024px) {
+  .flights {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: start;
+  }
+}
+
+/* ── Card shared ────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+/* ── Card image (primary / desktop secondary) ───── */
+.card-img {
+  width: 100%;
+  height: var(--img-h);
+  background: var(--dim);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border-bottom: 1px solid var(--border2);
 }
 
-.primary .img img {
-  width: 86px;
-  height: 86px;
+.card-img img.photo {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  opacity: 0.85;
-  filter: grayscale(1);
+  display: block;
 }
 
-.callsign {
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text);
+.card-img img.silhouette {
+  width: auto;
+  height: clamp(58px, 9vw, 96px);
+  object-fit: contain;
+  opacity: 0.5;
 }
 
-.route {
-  margin-top: 6px;
-  font-size: 18px;
-  color: var(--accent);
-}
-
-.route-codes {
-  font-weight: 600;
-  font-size: 1.05rem;
-}
-
-.route-names {
-  font-size: 0.85rem;
-  opacity: 0.7;
-}
-
-.labels {
-  margin-top: 6px;
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.meta {
-  margin-top: 10px;
-  font-size: 14px;
-  color: var(--muted);
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.secondary {
+/* ── Card body (primary / desktop secondary) ────── */
+.card-body {
+  padding: var(--pad);
   display: flex;
   flex-direction: column;
+  gap: clamp(8px, 1.2vw, 14px);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-row {
+  display: flex;
+  align-items: baseline;
   gap: 10px;
 }
 
-.secondary .row {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 14px;
+.icao24 {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(11px, 1.4vw, 14px);
+  color: var(--text2);
+  letter-spacing: 0.04em;
 }
 
-.secondary .row .left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.secondary .row .cs {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.secondary .row .rt {
-  font-size: 14px;
-  color: var(--accent);
-}
-
-.secondary .row .lbl {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.secondary .row .dist {
-  font-size: 14px;
-  color: var(--muted);
+.icao24-sm {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(10px, 1.2vw, 12px);
+  color: var(--text2);
+  letter-spacing: 0.03em;
   white-space: nowrap;
 }
 
-.footer {
-  margin-top: auto;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+.callsign {
+  font-size: var(--fs-cs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  line-height: 1;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
 }
 
-.hint {
-  font-size: 12px;
-  color: rgba(255,255,255,0.35);
+.aircraft-type {
+  font-size: var(--fs-label);
+  color: var(--text3);
+  text-align: right;
+  line-height: 1.4;
+  max-width: 42%;
+}
+
+.operator-name {
+  font-size: var(--fs-label);
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1vw, 10px);
+  padding: clamp(4px, 0.6vw, 8px) 0;
+}
+
+.route-code {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: var(--fs-route);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.route-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, rgba(240,160,32,0.45), rgba(240,160,32,0.12));
+}
+
+.route-arrow {
+  width: 0; height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 7px solid rgba(240,160,32,0.5);
+  flex-shrink: 0;
+}
+
+.route-names {
+  font-size: var(--fs-label);
+  color: var(--text2);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-names span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 48%;
+}
+
+.route-names span:last-child { text-align: right; }
+
+.stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.stat {
+  font-size: var(--fs-stat);
+  color: var(--text3);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+.stat-sep {
+  font-size: var(--fs-stat);
+  color: var(--text2);
+  margin: 0 clamp(5px, 0.8vw, 10px);
+}
+
+/* ── Compact secondary card (mobile/tablet only) ── */
+.card--compact {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.card--compact .thumb {
+  width: clamp(76px, 15vw, 120px);
+  min-width: clamp(76px, 15vw, 120px);
+  height: clamp(68px, 13vw, 106px);
+  background: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-right: 1px solid var(--border2);
+  flex-shrink: 0;
+}
+
+.card--compact .thumb img.photo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.card--compact .thumb img.silhouette {
+  width: auto;
+  height: clamp(30px, 5.5vw, 50px);
+  object-fit: contain;
+  opacity: 0.45;
+}
+
+.card--compact .info {
+  flex: 1;
+  min-width: 0;
+  padding: clamp(10px, 1.8vw, 18px) clamp(12px, 2vw, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 0.7vw, 8px);
+}
+
+.compact-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-sm {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(14px, 2.8vw, 22px);
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.route-compact {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(13px, 2.4vw, 19px);
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.km {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(11px, 1.6vw, 14px);
+  color: var(--text2);
+  white-space: nowrap;
+}
+
+.compact-bot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compact-meta {
+  font-size: clamp(10px, 1.5vw, 13px);
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-alt {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: clamp(10px, 1.5vw, 13px);
+  color: var(--text2);
+  white-space: nowrap;
+}
+
+/* ── Accordion slots (mobile/tablet) ───────────── */
+.card-slot { display: contents; } /* transparent wrapper */
+
+.card-slot--tap { cursor: pointer; }
+
+.card-slot--tap .card--compact {
+  opacity: 0.72;
+  transition: opacity 0.15s ease;
+  position: relative;
+}
+
+/* Subtle right-chevron hint on tappable cards */
+.card-slot--tap .card--compact::after {
+  content: '›';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: var(--text2);
+  pointer-events: none;
+}
+
+.card-slot--tap:hover .card--compact,
+.card-slot--tap:active .card--compact {
+  opacity: 1;
+}
+
+/* Smooth appear when a card expands */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-slot .card {
+  animation: card-in 0.18s ease;
+}
+
+/* ── Empty ──────────────────────────────────────── */
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-label);
+  color: var(--text2);
+  letter-spacing: 0.05em;
+  padding: 48px 0;
 }

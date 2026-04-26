@@ -78,21 +78,27 @@ class AeroApiClient(private val config: AppConfig) {
             }
 
             if (response.status != HttpStatusCode.OK) {
-                log.debug("AeroAPI /flights failed: status={} ident={}", response.status.value, ident)
+                log.info("AeroAPI /flights failed: status={} ident={}", response.status.value, ident)
                 return null
             }
 
             val body = response.body<AeroApiFlightsResponse>()
-            val first = body.flights.firstOrNull() ?: return null
+            val first = body.flights.firstOrNull() ?: run {
+                log.info("AeroAPI /flights returned empty flights list for ident={}", ident)
+                return null
+            }
 
-            FlightInfo(
+            val info = FlightInfo(
                 operatorIcao = first.operatorIcao?.trim()?.takeIf { it.isNotBlank() },
                 aircraftTypeIcao = first.aircraftType?.trim()?.takeIf { it.isNotBlank() },
                 originIcao = first.origin?.codeIcao?.trim()?.takeIf { it.isNotBlank() },
                 destinationIcao = first.destination?.codeIcao?.trim()?.takeIf { it.isNotBlank() }
             )
+            log.info("AeroAPI ident={} origin={} dest={} operator={} aircraft={}",
+                ident, info.originIcao, info.destinationIcao, info.operatorIcao, info.aircraftTypeIcao)
+            info
         } catch (t: Throwable) {
-            log.debug("AeroAPI fetch failed ident={}", ident, t)
+            log.info("AeroAPI fetch exception ident={}: {}", ident, t.message)
             null
         }
     }

@@ -1,114 +1,84 @@
 package org.ssm.flightradar.service
 
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonObject
 import org.ssm.flightradar.config.AppConfig
 import org.ssm.flightradar.datasource.OpenSkyDataSource
+import org.ssm.flightradar.domain.AircraftImageType
 import org.ssm.flightradar.domain.FlightState
-import org.ssm.flightradar.persistence.FlightCacheDocument
 import org.ssm.flightradar.persistence.FlightCacheRepository
-import org.ssm.flightradar.service.enrichment.AircraftImageResolver
-import org.ssm.flightradar.service.enrichment.RouteEnricher
+import org.ssm.flightradar.util.AirportLookupService
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class FlightServiceTest {
 
-    private class FakeOpenSky(private val states: List<FlightState>) : OpenSkyDataSource {
-        override suspend fun getStatesInBoundingBox(
-            lamin: Double,
-            lomin: Double,
-            lamax: Double,
-            lomax: Double
-        ): List<FlightState> = states
-
-        override suspend fun getFlightHistoryByCallsign(
-            callsign: String,
-            beginEpoch: Long,
-            endEpoch: Long
-        ): List<JsonObject> = emptyList()
-    }
-
-    private class FakeRouteEnricher : RouteEnricher(
-        openSky = object : OpenSkyDataSource {
-            override suspend fun getFlightHistoryByCallsign(
-                callsign: String,
-                beginEpoch: Long,
-                endEpoch: Long
-            ) = emptyList()
-        }
+    // Minimal config: AeroAPI attempts = 0 so no outbound paid calls are made in tests.
+    private val config = AppConfig(
+        port = 8080,
+        mongoUri = "mongodb://localhost:27017",
+        mongoDb = "test",
+        openskyClientId = "x",
+        openskyClientSecret = "y",
+        aeroApiKey = "x",
+        aeroApiBaseUrl = "https://aeroapi.flightaware.com/aeroapi",
+        flightWallCdnBaseUrl = "https://cdn.theflightwall.com",
+        maxAeroApiCallsPerDay = 0,
+        aeroApiNegativeCacheSeconds = 21600,
+        aeroApiMaxAttemptsPerCallsign = 0,
+        centerLat = 51.5136,
+        centerLon = 7.4653,
+        bboxDeltaDeg = 1.0,
+        maxDistanceKm = 40.0
     )
 
-    private class FakeAircraftImageResolver : AircraftImageResolver {
-        override suspend fun resolve(
-            aircraftType: String?,
-            registration: String?
-        ) = null
+    private val noopCache = object : FlightCacheRepository {
+        override suspend fun getCachedFlight(callsign: String) = null
+        override suspend fun upsertObservation(callsign: String, icao24: String, nowEpoch: Long) = Unit
+        override suspend fun updateAircraftImage(callsign: String, aircraftImageUrl: String, aircraftImageType: AircraftImageType) = Unit
+        override suspend fun updateEnrichment(
+            callsign: String, departureIcao: String?, arrivalIcao: String?,
+            operatorIcao: String?, aircraftTypeIcao: String?, operatorName: String?,
+            aircraftNameShort: String?, aircraftNameFull: String?,
+            aeroApiCheckedAtEpoch: Long?, aeroApiNotFoundUntilEpoch: Long?,
+            aeroApiAttemptCountDelta: Int
+        ) = Unit
+        override suspend fun tryAcquireAeroApiSlot(utcDate: String, maxPerDay: Int) = false
     }
 
-    private class FakeCache(private val byCallsign: Map<String, FlightCacheDocument>) : FlightCacheRepository {
-        override suspend fun getCachedFlight(callsign: String): FlightCacheDocument? = byCallsign[callsign]
-
-        override suspend fun findFlightsNeedingArrivalUpdate(yesterdayEpoch: Long): List<FlightCacheDocument> = emptyList()
-        override suspend fun updateArrival(callsign: String, arrival: String, arrivalName: String?) = Unit
-        override suspend fun incrementArrivalRetry(callsign: String) = Unit
-
-        override suspend fun upsertObservation(
-            icao24: String,
-            callsign: String?
-        ) {
+    private fun makeService(states: List<FlightState>): FlightService {
+        val openSky = object : OpenSkyDataSource {
+            override suspend fun getStatesInBoundingBox(
+                lamin: Double, lomin: Double, lamax: Double, lomax: Double
+            ) = states
         }
+        val enrichment = FlightEnrichmentService(config, noopCache, AirportLookupService())
+        return FlightService(openSky, noopCache, config, enrichment)
+    }
+
+    // Two flights near Dortmund (HOME_LAT=51.505, HOME_LON=7.466) at cruise altitude.
+    // At 10 000 m, effective visibility radius ≈ 89 km, well above MAX_DISTANCE_KM (40 km).
+    private val close = FlightState("aa", "CSE1", 51.52, 7.47, 10_000.0, 250.0, 90.0)  // ~2 km
+    private val far   = FlightState("bb", "CSE2", 51.65, 7.70, 10_000.0, 250.0, 45.0)  // ~20 km
+
+    @Test
+    fun `nearby returns flights sorted by distance ascending`() = runBlocking {
+        val result = makeService(listOf(far, close)).nearby(limit = 10)
+        assertEquals(2, result.size)
+        assertTrue(result[0].distanceKm < result[1].distanceKm, "Expected closest flight first")
     }
 
     @Test
-    fun `nearby sorts by distance and respects limit`() = runBlocking {
-
-        val config = AppConfig(
-            port = 8080,
-            mongoUri = "mongodb://localhost:27017",
-            mongoDb = "flight_radar",
-            openskyClientId = "x",
-            openskyClientSecret = "y",
-            centerLat = 51.5136,
-            centerLon = 7.4653,
-            bboxDeltaDeg = 1.0
-        )
-
-        val states = listOf(
-            FlightState(icao24 = "a", callsign = "CS2", lat = 51.60, lon = 7.70, altitude = 100.0, velocity = 200.0),
-            FlightState(icao24 = "b", callsign = "CS1", lat = 51.52, lon = 7.47, altitude = 100.0, velocity = 200.0)
-        )
-
-        val cache = mapOf(
-            "CS1" to FlightCacheDocument(
-                id = null,
-                callsign = "CS1",
-                icao24 = "b",
-                departure = "EDDF",
-                departureName = "Frankfurt",
-                arrival = null,
-                arrivalName = null,
-                firstSeenEpoch = 0L,
-                cachedAtEpoch = 0L
-            )
-        )
-
-        val enrichment = FlightEnrichmentService(
-            routeEnricher = FakeRouteEnricher(),
-            imageResolver = FakeAircraftImageResolver(),
-            clock = clock
-        )
-
-        val service = FlightService(
-            openSky = fakeOpenSky,
-            cache = fakeCache,
-            enrichment = enrichment,
-            clock = clock
-        )
-
-        val result = service.nearby(limit = 1, maxDistanceKm = 500.0)
+    fun `nearby respects limit and returns closest`() = runBlocking {
+        val result = makeService(listOf(far, close)).nearby(limit = 1)
         assertEquals(1, result.size)
-        assertEquals("CS1", result.first().callsign)
-        assertEquals("EDDF", result.first().departure)
+        assertEquals("CSE1", result[0].callsign)
+    }
+
+    @Test
+    fun `nearby filters out low-altitude flights`() = runBlocking {
+        val lowAlt = FlightState("cc", "CSE3", 51.52, 7.47, 100.0, 100.0, 0.0)
+        val result = makeService(listOf(lowAlt)).nearby(limit = 10)
+        assertEquals(0, result.size)
     }
 }

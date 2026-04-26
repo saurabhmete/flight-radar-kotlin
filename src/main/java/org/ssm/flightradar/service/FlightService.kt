@@ -1,5 +1,8 @@
 package org.ssm.flightradar.service
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.ssm.flightradar.datasource.OpenSkyDataSource
 import org.ssm.flightradar.persistence.FlightCacheRepository
 import org.ssm.flightradar.config.AppConfig
@@ -13,15 +16,9 @@ class FlightService(
     private val config: AppConfig,
     private val enrichment: FlightEnrichmentService
 ) {
-    private val HOME_LAT = 51.505122562296975
-    private val HOME_LON = 7.466314232256936
-
-    private val MAX_DISTANCE_KM = 40.0
+    private val MAX_DISTANCE_KM = config.maxDistanceKm
     private val MIN_ALTITUDE_METERS = 500.0
     private val VISIBILITY_FACTOR = 0.25
-
-    private val centerLat = config.centerLat
-    private val centerLon = config.centerLon
 
     suspend fun nearby(
         limit: Int,
@@ -30,10 +27,10 @@ class FlightService(
         val nowEpoch = System.currentTimeMillis() / 1000
 
         val states = openSky.getStatesInBoundingBox(
-            lamin = centerLat - config.bboxDeltaDeg,
-            lomin = centerLon - config.bboxDeltaDeg,
-            lamax = centerLat + config.bboxDeltaDeg,
-            lomax = centerLon + config.bboxDeltaDeg
+            lamin = config.centerLat - config.bboxDeltaDeg,
+            lomin = config.centerLon - config.bboxDeltaDeg,
+            lamax = config.centerLat + config.bboxDeltaDeg,
+            lomax = config.centerLon + config.bboxDeltaDeg
         )
 
         val base = states.mapNotNull { state ->
@@ -41,9 +38,10 @@ class FlightService(
             val lon = state.lon ?: return@mapNotNull null
 
             val distance =
-                Geo.haversineKm(HOME_LAT, HOME_LON, lat, lon)
+                Geo.haversineKm(config.centerLat, config.centerLon, lat, lon)
 
             if (!isVisible(distance, state.altitude)) return@mapNotNull null
+            if (!isAirlineFlight(state.callsign)) return@mapNotNull null
 
             NearbyFlight(
                 icao24 = state.icao24,
@@ -53,6 +51,7 @@ class FlightService(
                 lat = lat,
                 lon = lon,
                 velocity = state.velocity,
+                trueTrack = state.trueTrack,
 
                 distanceKm = distance
             )
@@ -60,8 +59,17 @@ class FlightService(
             .sortedBy { it.distanceKm }
             .take(limit)
 
-        // Enrich only the limited set (avoid unnecessary external calls).
-        return base.map { enrichment.enrich(it, nowEpoch) }
+        // Enrich in parallel — each flight makes independent external calls.
+        return coroutineScope {
+            base.map { async { enrichment.enrich(it, nowEpoch) } }.awaitAll()
+        }
+    }
+
+    // Airline callsigns: 3-letter ICAO operator code followed by a digit (e.g. DLH123, WZZ7XN).
+    // GA/private registrations (e.g. DEACV, DFSRT) have a letter at position 4.
+    private fun isAirlineFlight(callsign: String): Boolean {
+        if (callsign.length < 4) return false
+        return callsign.take(3).all { it.isLetter() } && callsign[3].isDigit()
     }
 
     private fun isVisible(
