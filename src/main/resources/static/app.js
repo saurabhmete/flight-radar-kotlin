@@ -8,6 +8,7 @@ const flightsEl   = document.getElementById('flights');
 
 let lastFlights    = [];
 let currentRdrSize = 0;
+let expandedIdx    = 0; // which card is expanded (mobile/tablet only)
 
 // ── Utils ───────────────────────────────────────────
 
@@ -226,15 +227,31 @@ function renderFlights(flights) {
   }
 
   if (isDesktop()) {
-    // All 3 equal full cards in a grid
     flightsEl.innerHTML = flights.map(fullCard).join('');
   } else {
-    // Primary full card + compact secondaries
-    const [first, ...rest] = flights;
-    flightsEl.innerHTML = fullCard(first) + rest.map(compactCard).join('');
+    // Clamp expandedIdx in case flight count changed
+    if (expandedIdx >= flights.length) expandedIdx = 0;
+
+    flightsEl.innerHTML = flights.map((f, i) => {
+      if (i === expandedIdx) {
+        return `<div class="card-slot" data-idx="${i}">${fullCard(f)}</div>`;
+      } else {
+        return `<div class="card-slot card-slot--tap" data-idx="${i}">${compactCard(f)}</div>`;
+      }
+    }).join('');
+
+    // Click any non-expanded card to expand it
+    flightsEl.querySelectorAll('.card-slot').forEach(slot => {
+      slot.addEventListener('click', () => {
+        const idx = parseInt(slot.dataset.idx);
+        if (idx !== expandedIdx) {
+          expandedIdx = idx;
+          renderFlights(lastFlights);
+        }
+      });
+    });
   }
 
-  // onerror fallback on all images
   flightsEl.querySelectorAll('img').forEach(img => {
     img.onerror = function() {
       this.onerror = null;

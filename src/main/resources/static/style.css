@@ -337,6 +337,44 @@ html, body {
   white-space: nowrap;
 }
 
+/* ── Accordion slots (mobile/tablet) ───────────── */
+.card-slot { display: contents; } /* transparent wrapper */
+
+.card-slot--tap { cursor: pointer; }
+
+.card-slot--tap .card--compact {
+  opacity: 0.72;
+  transition: opacity 0.15s ease;
+  position: relative;
+}
+
+/* Subtle right-chevron hint on tappable cards */
+.card-slot--tap .card--compact::after {
+  content: '›';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: var(--text2);
+  pointer-events: none;
+}
+
+.card-slot--tap:hover .card--compact,
+.card-slot--tap:active .card--compact {
+  opacity: 1;
+}
+
+/* Smooth appear when a card expands */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-slot .card {
+  animation: card-in 0.18s ease;
+}
+
 /* ── Empty ──────────────────────────────────────── */
 .empty {
   display: flex;
