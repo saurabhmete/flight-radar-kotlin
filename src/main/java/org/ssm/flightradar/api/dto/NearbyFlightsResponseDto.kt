@@ -15,6 +15,7 @@ data class NearbyFlightDto(
     val lat: Double,
     val lon: Double,
     val velocity: Double?,
+    @SerialName("true_track") val trueTrack: Double?,
     @SerialName("distance_km") val distanceKm: Double,
 
     val departure: String?,

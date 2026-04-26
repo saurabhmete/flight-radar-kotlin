@@ -53,6 +53,7 @@ class FlightService(
                 lat = lat,
                 lon = lon,
                 velocity = state.velocity,
+                trueTrack = state.trueTrack,
 
                 distanceKm = distance
             )

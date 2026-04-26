@@ -114,6 +114,7 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
          6  -> latitude
          7  -> baro_altitude
          9  -> velocity
+         10 -> true_track (degrees clockwise from north)
         */
 
         return states.mapNotNull { el ->
@@ -129,7 +130,8 @@ class OpenSkyClient(private val config: AppConfig) : OpenSkyDataSource {
                 lon = arr.getOrNull(5)?.jsonPrimitive?.doubleOrNull,
                 lat = arr.getOrNull(6)?.jsonPrimitive?.doubleOrNull,
                 altitude = arr.getOrNull(7)?.jsonPrimitive?.doubleOrNull,
-                velocity = arr.getOrNull(9)?.jsonPrimitive?.doubleOrNull
+                velocity = arr.getOrNull(9)?.jsonPrimitive?.doubleOrNull,
+                trueTrack = arr.getOrNull(10)?.jsonPrimitive?.doubleOrNull
             )
         }
     }

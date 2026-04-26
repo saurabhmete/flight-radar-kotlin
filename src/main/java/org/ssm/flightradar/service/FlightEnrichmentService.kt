@@ -159,12 +159,15 @@ class FlightEnrichmentService(
         val alreadyHasRoute = !flight.departure.isNullOrBlank() && !flight.arrival.isNullOrBlank()
         if (alreadyHasRoute) return flight
 
+        // Cooldown gate first: don't retry while we're still in the negative-cache window.
+        val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
+        val inCooldown = notFoundUntil != null && nowEpoch < notFoundUntil
+        if (inCooldown) return flight
+
+        // Attempt cap second: once cooldown expires the count is checked, so attempts are
+        // consumed across cooldown windows (maxAttempts=1 → one lifetime try, =2 → two, etc.).
         val attempts = cached?.aeroApiAttemptCount ?: 0
         if (attempts >= config.aeroApiMaxAttemptsPerCallsign) return flight
-
-        val notFoundUntil = cached?.aeroApiNotFoundUntilEpoch
-        val canTry = (notFoundUntil == null) || (nowEpoch >= notFoundUntil)
-        if (!canTry) return flight
 
         val utcDate = utcDateFormatter.format(Instant.ofEpochSecond(nowEpoch))
 
@@ -240,9 +243,9 @@ class FlightEnrichmentService(
         flight: NearbyFlight,
         cleanCallsign: String
     ): NearbyFlight {
-        if (!flight.aircraftImageUrl.isNullOrBlank() && flight.aircraftImageType != null) return flight
+        if (flight.aircraftImageType == AircraftImageType.EXACT) return flight
 
-        val resolvedUrl = TimeoutRunner.run(300L) {
+        val resolvedUrl = TimeoutRunner.run(1500L) {
             imageResolver.resolveByIcao24(flight.icao24)
         }
 

@@ -1,157 +1,239 @@
 :root {
   --bg: #000000;
-  --text: #c8c8c8;
-  --muted: #7a7a7a;
+  --surface: #0d0d0d;
+  --text: #d0d0d0;
+  --muted: #6a6a6a;
   --accent: #e0b86b;
-  --border: rgba(255,255,255,0.08);
+  --accent-dim: rgba(224,184,107,0.15);
+  --border: rgba(255,255,255,0.07);
+  --border-hover: rgba(255,255,255,0.13);
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   height: 100%;
-  margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .container {
-  padding: 18px;
+  padding: 18px 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
 }
+
+/* ── Header ──────────────────────────────── */
 
 .header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .title {
-  font-size: 18px;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
+  font-weight: 500;
 }
 
 .subtitle {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--muted);
+  opacity: 0.7;
 }
 
-.primary {
+/* ── Radar ───────────────────────────────── */
+
+.radar-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+#radar {
+  border-radius: 50%;
+  display: block;
+}
+
+/* ── Primary card ────────────────────────── */
+
+#primary {
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 14px;
-  align-items: center;
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+  transition: opacity 0.3s;
 }
 
-.primary .img {
-  width: 90px;
-  height: 90px;
+#primary.fading { opacity: 0.3; }
+
+.primary-grid {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.aircraft-img-wrap {
+  width: 84px;
+  height: 84px;
   border-radius: 12px;
   background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
-.primary .img img {
-  width: 86px;
-  height: 86px;
+.aircraft-img-wrap img {
+  width: 80px;
+  height: 80px;
+  display: block;
+}
+
+.aircraft-img-wrap img.photo {
+  object-fit: cover;
+  border-radius: 11px;
+}
+
+.aircraft-img-wrap img.silhouette {
   object-fit: contain;
-  opacity: 0.85;
-  filter: grayscale(1);
+  opacity: 0.75;
+  padding: 8px;
+}
+
+.primary-details {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
 .callsign {
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.route {
-  margin-top: 6px;
-  font-size: 18px;
-  color: var(--accent);
+.op-aircraft {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-block {
+  margin-top: 4px;
 }
 
 .route-codes {
+  font-size: 17px;
   font-weight: 600;
-  font-size: 1.05rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
 }
 
 .route-names {
-  font-size: 0.85rem;
-  opacity: 0.7;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.4;
 }
 
-.labels {
-  margin-top: 6px;
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.meta {
-  margin-top: 10px;
-  font-size: 14px;
-  color: var(--muted);
+.meta-pills {
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
 }
 
-.secondary {
+.pill {
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+/* ── Secondary cards ─────────────────────── */
+
+#secondary {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.secondary .row {
+.sec-card {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 11px 14px;
+  background: var(--surface);
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 14px;
+  align-items: center;
+  gap: 12px;
 }
 
-.secondary .row .left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.secondary .row .cs {
-  font-size: 18px;
+.sec-cs {
+  font-size: 15px;
   font-weight: 700;
+  white-space: nowrap;
+  min-width: 70px;
 }
 
-.secondary .row .rt {
-  font-size: 14px;
+.sec-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.sec-route {
+  font-size: 13px;
   color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.secondary .row .lbl {
-  margin-top: 4px;
-  font-size: 12px;
+.sec-meta {
+  font-size: 11px;
   color: var(--muted);
+  margin-top: 2px;
 }
 
-.secondary .row .dist {
-  font-size: 14px;
+.sec-dist {
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* ── Empty state ─────────────────────────── */
+
+.empty {
+  font-size: 15px;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ── Footer ──────────────────────────────── */
 
 .footer {
   margin-top: auto;
@@ -160,6 +242,6 @@ html, body {
 }
 
 .hint {
-  font-size: 12px;
-  color: rgba(255,255,255,0.35);
+  font-size: 11px;
+  color: rgba(255,255,255,0.2);
 }

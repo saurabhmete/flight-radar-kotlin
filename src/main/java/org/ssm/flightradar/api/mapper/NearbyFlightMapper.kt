@@ -10,6 +10,7 @@ fun NearbyFlight.toDto(): NearbyFlightDto = NearbyFlightDto(
     lat = lat,
     lon = lon,
     velocity = velocity,
+    trueTrack = trueTrack,
     distanceKm = distanceKm,
 
     departure = departure,
