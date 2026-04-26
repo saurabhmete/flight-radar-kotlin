@@ -28,7 +28,8 @@ class FlightServiceTest {
         aeroApiMaxAttemptsPerCallsign = 0,
         centerLat = 51.5136,
         centerLon = 7.4653,
-        bboxDeltaDeg = 1.0
+        bboxDeltaDeg = 1.0,
+        maxDistanceKm = 40.0
     )
 
     private val noopCache = object : FlightCacheRepository {

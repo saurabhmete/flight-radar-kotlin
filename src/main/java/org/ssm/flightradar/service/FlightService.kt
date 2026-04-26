@@ -16,15 +16,9 @@ class FlightService(
     private val config: AppConfig,
     private val enrichment: FlightEnrichmentService
 ) {
-    private val HOME_LAT = 51.505122562296975
-    private val HOME_LON = 7.466314232256936
-
-    private val MAX_DISTANCE_KM = 40.0
+    private val MAX_DISTANCE_KM = config.maxDistanceKm
     private val MIN_ALTITUDE_METERS = 500.0
     private val VISIBILITY_FACTOR = 0.25
-
-    private val centerLat = config.centerLat
-    private val centerLon = config.centerLon
 
     suspend fun nearby(
         limit: Int,
@@ -33,10 +27,10 @@ class FlightService(
         val nowEpoch = System.currentTimeMillis() / 1000
 
         val states = openSky.getStatesInBoundingBox(
-            lamin = centerLat - config.bboxDeltaDeg,
-            lomin = centerLon - config.bboxDeltaDeg,
-            lamax = centerLat + config.bboxDeltaDeg,
-            lomax = centerLon + config.bboxDeltaDeg
+            lamin = config.centerLat - config.bboxDeltaDeg,
+            lomin = config.centerLon - config.bboxDeltaDeg,
+            lamax = config.centerLat + config.bboxDeltaDeg,
+            lomax = config.centerLon + config.bboxDeltaDeg
         )
 
         val base = states.mapNotNull { state ->
@@ -44,7 +38,7 @@ class FlightService(
             val lon = state.lon ?: return@mapNotNull null
 
             val distance =
-                Geo.haversineKm(HOME_LAT, HOME_LON, lat, lon)
+                Geo.haversineKm(config.centerLat, config.centerLon, lat, lon)
 
             if (!isVisible(distance, state.altitude)) return@mapNotNull null
             if (!isAirlineFlight(state.callsign)) return@mapNotNull null
