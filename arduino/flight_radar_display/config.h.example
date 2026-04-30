@@ -35,6 +35,14 @@
 #define OBSERVER_LON    7.466f
 #define RADAR_MAX_KM   40.0f
 
+// ── Spotify ───────────────────────────────────────────────────────────────────
+// Run arduino/spotify_auth.py once to get these values.
+// In Spotify Developer Dashboard, set Redirect URI to: http://127.0.0.1:8888/callback
+// (HTTP is allowed for loopback IPs; "localhost" is blocked by Spotify's April 2025 policy)
+#define SPOTIFY_CLIENT_ID     "your_client_id_here"
+#define SPOTIFY_CLIENT_SECRET "your_client_secret_here"
+#define SPOTIFY_REFRESH_TOKEN "your_refresh_token_here"
+
 // ── App ───────────────────────────────────────────────────────────────────────
 #define FETCH_INTERVAL_MS  15000UL   // refresh every 15 s (matches web)
 #define MAX_FLIGHTS        3         // 1 primary + 2 compact

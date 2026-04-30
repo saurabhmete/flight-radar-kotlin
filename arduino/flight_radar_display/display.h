@@ -4,10 +4,13 @@
 #include <JPEGDEC.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <Wire.h>
 #include <math.h>
 #include "config.h"
 #include "flight_fetcher.h"
 #include "weather_fetcher.h"
+#include "spotify_fetcher.h"
 
 // ── Colours (RGB565, matching web: #000 bg / #f0a020 amber / #111 surface) ──
 #define C_BG      0x0000   // #000000  background
@@ -92,8 +95,14 @@ static int _jpegCb(JPEGDRAW *d) {
 static bool _drawImageFromUrl(const char *url, int x, int y, int maxW, int maxH) {
   if (!url || !url[0]) return false;
 
+  // Use WiFiClientSecure for HTTPS image URLs (Spotify CDN), plain for HTTP
+  bool isHttps = strncmp(url, "https://", 8) == 0;
+  WiFiClientSecure secureClient;
+  if (isHttps) secureClient.setInsecure();
+
   HTTPClient http;
-  http.begin(url);
+  if (isHttps) http.begin(secureClient, url);
+  else         http.begin(url);
   http.setTimeout(8000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.addHeader("User-Agent", "FlightRadar/1.0 ESP32");
@@ -747,5 +756,125 @@ inline void renderWeather(const Weather &w) {
   _gfx->setCursor((SCREEN_W - updW) / 2, 374);
   _gfx->print(updBuf);
 
+  _gfx->flush();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── Touch ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+inline void touchInit() {
+  pinMode(TOUCH_RST, OUTPUT);
+  pinMode(TOUCH_INT, INPUT_PULLUP);
+  digitalWrite(TOUCH_RST, LOW);  delay(10);
+  digitalWrite(TOUCH_RST, HIGH); delay(50);
+  Wire.begin(TOUCH_SDA, TOUCH_SCL);
+  Wire.setClock(TOUCH_I2C_HZ);
+  Serial.println("[touch] init OK");
+}
+
+// AXS15231B: INT pin goes LOW when a finger is down.
+// Read 6 bytes directly — no register write needed.
+inline bool touchRead(int &x, int &y) {
+  if (digitalRead(TOUCH_INT) != LOW) return false;  // no touch
+
+  uint8_t buf[6] = {};
+  Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)6);
+  for (int i = 0; i < 6 && Wire.available(); i++) buf[i] = Wire.read();
+
+  // buf[1] = finger count, buf[2..5] = x/y coords
+  if (buf[1] == 0) return false;
+  x = ((buf[2] & 0x0F) << 8) | buf[3];
+  y = ((buf[4] & 0x0F) << 8) | buf[5];
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── Music screen ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Layout (320x480):
+//  y=  0– 59  header
+//  y= 60–339  album art (280px tall, full width)
+//  y=346–362  song title  (SIZE 2, centred)
+//  y=368–376  artist      (SIZE 1, centred)
+//  y=382–387  album name  (SIZE 1, dim, centred)
+//  y=400–405  progress bar
+//  y=409–417  time labels
+
+#define MUSIC_ART_Y   60
+#define MUSIC_ART_H  280
+#define MUSIC_BAR_Y  400
+#define MUSIC_BAR_H    5
+#define MUSIC_BAR_X   12
+#define MUSIC_BAR_W  (SCREEN_W - 24)
+
+static void _musicDrawProgress(const SpotifyTrack &t) {
+  _gfx->fillRoundRect(MUSIC_BAR_X, MUSIC_BAR_Y, MUSIC_BAR_W, MUSIC_BAR_H, 2, C_BORDER);
+  if (t.duration_ms > 0) {
+    int filled = (int)((float)t.progress_ms / t.duration_ms * MUSIC_BAR_W);
+    if (filled > 0)
+      _gfx->fillRoundRect(MUSIC_BAR_X, MUSIC_BAR_Y, filled, MUSIC_BAR_H, 2, C_ACCENT);
+  }
+  _gfx->fillRect(MUSIC_BAR_X, 409, MUSIC_BAR_W, 8, C_BG);
+  _gfx->setTextColor(C_DIM3); _gfx->setTextSize(1);
+  char tL[8], tT[8];
+  snprintf(tL, sizeof(tL), "%d:%02d", t.progress_ms/60000, (t.progress_ms/1000)%60);
+  snprintf(tT, sizeof(tT), "%d:%02d", t.duration_ms/60000, (t.duration_ms/1000)%60);
+  _gfx->setCursor(MUSIC_BAR_X, 409); _gfx->print(tL);
+  _gfx->setCursor(MUSIC_BAR_X + MUSIC_BAR_W - (int)strlen(tT)*6, 409); _gfx->print(tT);
+}
+
+inline void renderMusic(const SpotifyTrack &t) {
+  _gfx->fillScreen(C_BG);
+
+  // ── Header ─────────────────────────────────────────────────────────────
+  _gfx->setTextColor(C_DIM3); _gfx->setTextSize(1);
+  _gfx->setCursor(8, 10); _gfx->print("F L I G H T  R A D A R");
+  _gfx->setTextColor(t.is_playing ? C_ACCENT : C_DIM2);
+  _gfx->setCursor(8, 24); _gfx->print(t.is_playing ? "NOW PLAYING" : "PAUSED");
+  _gfx->drawLine(0, HEADER_H - 1, SCREEN_W, HEADER_H - 1, C_BORDER);
+
+  // ── Album art (full width, 280px tall) ─────────────────────────────────
+  _gfx->fillRect(0, MUSIC_ART_Y, SCREEN_W, MUSIC_ART_H, 0x0841);
+  if (t.art_url[0]) {
+    _gfx->flush();
+    _drawImageFromUrl(t.art_url, 0, MUSIC_ART_Y, SCREEN_W, MUSIC_ART_H);
+  }
+
+  // ── Song title (SIZE 2, centred) ────────────────────────────────────────
+  _gfx->setTextColor(C_TEXT); _gfx->setTextSize(2);
+  char title[27]; truncate(title, t.title, 26);
+  int titleW = strlen(title) * 12;
+  _gfx->setCursor(max(0, (SCREEN_W - titleW) / 2), 346);
+  _gfx->print(title);
+
+  // ── Artist (SIZE 1, centred) ────────────────────────────────────────────
+  _gfx->setTextColor(C_DIM2); _gfx->setTextSize(1);
+  char artist[50]; truncate(artist, t.artist, 49);
+  int artistW = strlen(artist) * 6;
+  _gfx->setCursor(max(0, (SCREEN_W - artistW) / 2), 368);
+  _gfx->print(artist);
+
+  // ── Album (SIZE 1, dim, centred) ───────────────────────────────────────
+  _gfx->setTextColor(C_DIM3); _gfx->setTextSize(1);
+  char album[50]; truncate(album, t.album, 49);
+  int albumW = strlen(album) * 6;
+  _gfx->setCursor(max(0, (SCREEN_W - albumW) / 2), 382);
+  _gfx->print(album);
+
+  // ── Progress bar + times ────────────────────────────────────────────────
+  _musicDrawProgress(t);
+
+  _gfx->flush();
+}
+
+// Lightweight 1-second update — only redraws progress bar, times, and
+// the NOW PLAYING / PAUSED status. No art re-download.
+inline void renderMusicProgress(const SpotifyTrack &t) {
+  _gfx->fillRect(8, 24, 120, 8, C_BG);
+  _gfx->setTextColor(t.is_playing ? C_ACCENT : C_DIM2); _gfx->setTextSize(1);
+  _gfx->setCursor(8, 24); _gfx->print(t.is_playing ? "NOW PLAYING" : "PAUSED");
+  _musicDrawProgress(t);
   _gfx->flush();
 }

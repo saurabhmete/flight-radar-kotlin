@@ -22,9 +22,17 @@ Unlike generic flight trackers that show everything within a radius, this system
 The `arduino/` directory contains a standalone ESP32 sketch for the **Waveshare JC3248W535C** (3.5", 320×480, AXS15231B QSPI). It connects to the same RPi backend over WiFi and renders the same data on a physical display.
 
 ### What it shows
-- **Flights overhead**: primary card (callsign, route, operator, aircraft photo, altitude/speed/distance) + two compact cards
-- **No flights**: full-screen weather from open-meteo.com (temperature, feels like, condition icon, wind, humidity)
-- Mini radar in the header with live flight dot positions
+The display cycles through three screens automatically:
+
+| Priority | Screen | Shown when |
+|---|---|---|
+| 1 | **Now Playing** | Spotify is actively playing |
+| 2 | **Flights** | Spotify paused/stopped + flights overhead |
+| 3 | **Weather** | Spotify paused/stopped + no flights |
+
+- **Now Playing** — full-width album art (280px), song title, artist, album name, live progress bar updating every second
+- **Flights** — primary card (callsign, route, operator, aircraft photo, altitude/speed/distance) + two compact cards + mini radar
+- **Weather** — temperature, feels like, condition icon, wind/humidity, moon phase at night (open-meteo + NTP)
 
 ### Hardware
 | Pin function | GPIO |
@@ -37,14 +45,23 @@ The `arduino/` directory contains a standalone ESP32 sketch for the **Waveshare 
 
 ### Setup
 1. Copy `arduino/flight_radar_display/config.h.example` → `config.h`
-2. Fill in your WiFi credentials and RPi IP
+2. Fill in your WiFi credentials, RPi IP, and Spotify credentials (see below)
 3. Flash with Arduino IDE (ESP32 board package, Arduino_GFX_Library, ArduinoJson, JPEGDEC)
 
 ```cpp
-#define WIFI_SSID      "YourNetwork"
-#define WIFI_PASSWORD  "YourPassword"
-#define API_HOST       "http://192.168.x.x:8000"
+#define WIFI_SSID             "YourNetwork"
+#define WIFI_PASSWORD         "YourPassword"
+#define API_HOST              "http://192.168.x.x:8000"
+#define SPOTIFY_CLIENT_ID     "..."
+#define SPOTIFY_CLIENT_SECRET "..."
+#define SPOTIFY_REFRESH_TOKEN "..."
 ```
+
+### Spotify setup (one-time)
+1. Create an app at [developer.spotify.com](https://developer.spotify.com/dashboard)
+2. Add `http://127.0.0.1:8888/callback` as a Redirect URI
+3. Run `python3 arduino/spotify_auth.py` — a browser opens, you approve, the script prints the three defines
+4. Paste them into `config.h`
 
 ---
 
