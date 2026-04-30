@@ -68,24 +68,21 @@ inline void displayInit() {
 }
 
 // ── JPEG image loader ─────────────────────────────────────────────────────────
-static JPEGDEC _jpeg;
-static int _imgDstX, _imgDstY, _imgMaxW, _imgMaxH;
-static int _imgSrcW, _imgSrcH;  // scaled image dimensions — used to clip MCU padding
+static JPEGDEC    _jpeg;
+static uint16_t  *_imgBuf  = nullptr;
+static int        _imgBufW, _imgBufH;
 
+// Collect each MCU block into a flat PSRAM pixel buffer (stride = _imgBufW).
+// Drawing happens once after decode — avoids all per-block stride/timing issues.
 static int _jpegCb(JPEGDRAW *d) {
+  if (!_imgBuf) return 0;
+  int cols = min((int)d->iWidth, _imgBufW - (int)d->x);
+  if (cols <= 0) return 1;
   for (int row = 0; row < (int)d->iHeight; row++) {
-    // Clip to scaled image bounds (MCU blocks are padded to multiples of 8/16;
-    // those padding pixels are garbage and render as green lines).
-    if (d->y + row >= _imgSrcH) break;
-    int py = _imgDstY + d->y + row;
-    if (py >= _imgDstY + _imgMaxH) break;
-
-    for (int col = 0; col < (int)d->iWidth; col++) {
-      if (d->x + col >= _imgSrcW) break;
-      int px = _imgDstX + d->x + col;
-      if (px >= _imgDstX + _imgMaxW) break;
-      _gfx->writePixel(px, py, d->pPixels[row * d->iWidth + col]);
-    }
+    if ((int)(d->y + row) >= _imgBufH) break;
+    memcpy(&_imgBuf[(d->y + row) * _imgBufW + d->x],
+           d->pPixels + row * d->iWidth,
+           cols * sizeof(uint16_t));
   }
   return 1;
 }
@@ -131,26 +128,44 @@ static bool _drawImageFromUrl(const char *url, int x, int y, int maxW, int maxH)
   int ih = _jpeg.getHeight();
 
   // Pick smallest power-of-2 scale that fits within the box
+  // JPEG_SCALE_EIGHTH has a known chroma reconstruction bug in JPEGDEC that
+  // produces 2 green pixels per row. Cap at QUARTER — 8MB PSRAM handles it.
   int flags = 0;
-  if (iw > maxW * 4 || ih > maxH * 4)      flags = JPEG_SCALE_EIGHTH;
-  else if (iw > maxW * 2 || ih > maxH * 2) flags = JPEG_SCALE_QUARTER;
-  else if (iw > maxW     || ih > maxH)      flags = JPEG_SCALE_HALF;
+  if (iw > maxW * 2 || ih > maxH * 2) flags = JPEG_SCALE_QUARTER;
+  else if (iw > maxW || ih > maxH)     flags = JPEG_SCALE_HALF;
 
-  int scale = (flags == JPEG_SCALE_EIGHTH) ? 8 :
-              (flags == JPEG_SCALE_QUARTER) ? 4 :
+  int scale = (flags == JPEG_SCALE_QUARTER) ? 4 :
               (flags == JPEG_SCALE_HALF)    ? 2 : 1;
 
-  // Centre horizontally inside the box
-  _imgDstX = x + max(0, (maxW - iw / scale) / 2);
-  _imgDstY = y;
-  _imgMaxW = maxW;
-  _imgMaxH = maxH;
-  _imgSrcW = iw / scale;
-  _imgSrcH = ih / scale;
+  _imgBufW = min(iw / scale, maxW);
+  _imgBufH = min(ih / scale, maxH);
+  _imgBuf  = (uint16_t*)ps_malloc(_imgBufW * _imgBufH * sizeof(uint16_t));
+  if (!_imgBuf) {
+    Serial.println("[img] ps_malloc imgBuf failed");
+    _jpeg.close(); free(buf); return false;
+  }
+  memset(_imgBuf, 0, _imgBufW * _imgBufH * sizeof(uint16_t));
 
   _jpeg.decode(0, 0, flags);
   _jpeg.close();
   free(buf);
+
+  // JPEGDEC produces fully-saturated green (R<4, G>48, B<4) artifacts in some
+  // decoded pixels. Real image greens always contain red/blue. Replace with
+  // the left neighbour so the lines disappear without affecting real colours.
+  for (int i = 0; i < _imgBufW * _imgBufH; i++) {
+    uint16_t p = _imgBuf[i];
+    if (((p >> 11) & 0x1F) < 4 && ((p >> 5) & 0x3F) > 48 && (p & 0x1F) < 4)
+      _imgBuf[i] = (i > 0) ? _imgBuf[i - 1] : 0x0000;
+  }
+
+  int dstX = x + max(0, (maxW - _imgBufW) / 2);
+  for (int row = 0; row < _imgBufH; row++)
+    for (int col = 0; col < _imgBufW; col++)
+      _gfx->writePixel(dstX + col, y + row, _imgBuf[row * _imgBufW + col]);
+
+  free(_imgBuf);
+  _imgBuf = nullptr;
   return true;
 }
 
@@ -500,6 +515,34 @@ static void _wCloud(int cx, int cy, int w, int h, uint16_t col) {
   _gfx->fillRoundRect(cx - w / 2, cy - r / 2, w, r + 4, 4, col);
 }
 
+// Moon phase: scanline terminator algorithm.
+// phase 0=new 0.25=first quarter 0.5=full 0.75=last quarter
+static void _drawMoon(int cx, int cy, int r, float phase) {
+  uint16_t moonCol = 0xDEFB;   // warm off-white
+
+  _gfx->fillCircle(cx, cy, r, C_BG);
+  _gfx->drawCircle(cx, cy, r, C_DIM2);
+
+  float phi = phase * 2.0f * M_PI;
+  // Waxing (0–0.5): draw right of terminator. Waning (0.5–1): draw left.
+  float txScale  = (phase <= 0.5f) ?  cosf(phi) : -cosf(phi);
+  bool  litRight = (phase <= 0.5f);
+
+  for (int dy = -r; dy <= r; dy++) {
+    float hw_f = sqrtf((float)(r * r - dy * dy));
+    int hw = (int)hw_f;
+    if (hw == 0) continue;
+    int tx = cx + (int)(txScale * hw_f);
+    if (litRight) {
+      int x0 = max(tx, cx - hw);
+      if (cx + hw > x0) _gfx->drawFastHLine(x0, cy + dy, cx + hw - x0, moonCol);
+    } else {
+      int x1 = min(tx, cx + hw);
+      if (x1 > cx - hw) _gfx->drawFastHLine(cx - hw, cy + dy, x1 - (cx - hw), moonCol);
+    }
+  }
+}
+
 // Sun: filled amber circle + 8 thick rays
 static void _wSun(int cx, int cy, int r) {
   int disk = r * 4 / 9;
@@ -625,6 +668,9 @@ inline void renderWeather(const Weather &w) {
   _gfx->setTextColor(C_DIM2);
   _gfx->setCursor(8, 24);
   _gfx->print("no flights | area clear");
+
+  // Moon phase in top-right when it's night (mirrors radar position on flight screen)
+  if (w.is_night) _drawMoon(280, 34, 20, w.moon_phase);
 
   _gfx->drawLine(0, HEADER_H - 1, SCREEN_W, HEADER_H - 1, C_BORDER);
 

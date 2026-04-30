@@ -21,6 +21,8 @@ struct Weather {
   int         code;       // raw WMO code
   WeatherIcon icon;
   char        condition[28];
+  bool        is_night;   // true when sun is below horizon
+  float       moon_phase; // 0.0=new moon 0.25=first quarter 0.5=full 0.75=last quarter
   bool        valid;
 };
 

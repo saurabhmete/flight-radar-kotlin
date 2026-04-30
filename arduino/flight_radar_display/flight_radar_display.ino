@@ -40,6 +40,13 @@ void setup() {
   wifiConnect(WIFI_SSID, WIFI_PASSWORD);
   showStatus("WiFi OK");
   Serial.println("[boot] WiFi OK");
+
+  Serial.println("[boot] syncing NTP...");
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  struct tm ti;
+  for (int i = 0; i < 20 && !getLocalTime(&ti); i++) delay(500);
+  Serial.printf("[boot] NTP OK — %04d-%02d-%02d %02d:%02d\n",
+                ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, ti.tm_hour, ti.tm_min);
 }
 
 void loop() {

@@ -4,6 +4,18 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <math.h>
+#include <time.h>
+
+// Moon phase 0.0=new 0.25=first quarter 0.5=full 0.75=last quarter
+// Reference new moon: 2000-01-06 18:14 UTC (unix 947182440)
+static float _moonPhase() {
+  time_t now = time(nullptr);
+  if (now < 946684800L) return 0.0f;  // NTP not synced yet
+  float elapsed = (float)(now - 947182440L);
+  float phase = fmodf(elapsed, 2551443.0f) / 2551443.0f;
+  return (phase < 0) ? phase + 1.0f : phase;
+}
 
 static WeatherIcon _icon(int code) {
   if (code <= 1)                             return WEATHER_CLEAR;
@@ -40,7 +52,7 @@ bool fetchWeather(Weather &out) {
     "https://api.open-meteo.com/v1/forecast"
     "?latitude=%.4f&longitude=%.4f"
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
-    "wind_speed_10m,weather_code"
+    "wind_speed_10m,weather_code,is_day"
     "&wind_speed_unit=kmh&timezone=auto",
     (double)OBSERVER_LAT, (double)OBSERVER_LON);
 
@@ -72,18 +84,20 @@ bool fetchWeather(Weather &out) {
   }
 
   JsonObject cur = doc["current"];
-  out.temp_c   = cur["temperature_2m"]        | 0.0f;
-  out.feels_c  = cur["apparent_temperature"]   | 0.0f;
-  out.humidity = cur["relative_humidity_2m"]   | 0;
-  out.wind_kmh = (uint8_t)(cur["wind_speed_10m"].as<float>());
-  out.code     = cur["weather_code"]           | 0;
-  out.icon     = _icon(out.code);
+  out.temp_c    = cur["temperature_2m"]        | 0.0f;
+  out.feels_c   = cur["apparent_temperature"]   | 0.0f;
+  out.humidity  = cur["relative_humidity_2m"]   | 0;
+  out.wind_kmh  = (uint8_t)(cur["wind_speed_10m"].as<float>());
+  out.code      = cur["weather_code"]           | 0;
+  out.is_night  = (cur["is_day"] | 1) == 0;
+  out.icon      = _icon(out.code);
   strncpy(out.condition, _condition(out.code), sizeof(out.condition) - 1);
   out.condition[sizeof(out.condition) - 1] = 0;
-  out.valid    = true;
+  out.moon_phase = _moonPhase();
+  out.valid     = true;
 
-  Serial.printf("[weather] %.1fC feels %.1fC  wind %dkm/h  hum %d%%  code %d (%s)\n",
+  Serial.printf("[weather] %.1fC feels %.1fC  wind %dkm/h  hum %d%%  code %d (%s)  night=%d  moon=%.2f\n",
                 out.temp_c, out.feels_c, out.wind_kmh, out.humidity,
-                out.code, out.condition);
+                out.code, out.condition, out.is_night, out.moon_phase);
   return true;
 }
