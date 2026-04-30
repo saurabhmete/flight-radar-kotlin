@@ -18,11 +18,25 @@
 #include "wifi_client.h"
 #include "flight_fetcher.h"
 #include "weather_fetcher.h"
+#include "spotify_fetcher.h"
 
-static Weather lastWeather  = {};
-static unsigned long lastWeatherFetch = 0;
-static const unsigned long WEATHER_TTL_MS = 600000UL;  // re-fetch weather every 10 min
+// ── State ─────────────────────────────────────────────────────────────────────
+static Weather       lastWeather        = {};
+static SpotifyTrack  lastTrack          = {};
+static char          lastRenderedTitle[64] = {};
+static unsigned long lastWeatherFetch   = 0;
+static unsigned long lastSpotifyFetch   = 0;
+static unsigned long lastFlightFetch    = 0;
+static unsigned long lastProgressRender = 0;
 
+static const unsigned long WEATHER_TTL_MS    = 600000UL;  // 10 min
+static const unsigned long SPOTIFY_POLL_MS   =   5000UL;  //  5 s
+static const unsigned long PROGRESS_RENDER_MS =  1000UL;  //  1 s
+
+enum DisplayMode { MODE_FLIGHTS, MODE_WEATHER, MODE_MUSIC };
+static DisplayMode currentMode = MODE_FLIGHTS;
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   unsigned long t0 = millis();
@@ -30,46 +44,74 @@ void setup() {
   delay(200);
 
   Serial.println("[boot] starting...");
-
-  Serial.println("[boot] init display");
   displayInit();
-  Serial.println("[boot] display OK");
   showSplash();
+  touchInit();
 
-  Serial.println("[boot] connecting WiFi");
   wifiConnect(WIFI_SSID, WIFI_PASSWORD);
   showStatus("WiFi OK");
-  Serial.println("[boot] WiFi OK");
 
-  Serial.println("[boot] syncing NTP...");
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   struct tm ti;
   for (int i = 0; i < 20 && !getLocalTime(&ti); i++) delay(500);
-  Serial.printf("[boot] NTP OK — %04d-%02d-%02d %02d:%02d\n",
+  Serial.printf("[boot] NTP %04d-%02d-%02d %02d:%02d\n",
                 ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, ti.tm_hour, ti.tm_min);
+
+  showStatus("Spotify auth...");
+  spotifyRefreshToken();
+  showStatus("Ready");
 }
 
+// ── Loop ──────────────────────────────────────────────────────────────────────
 void loop() {
-  static unsigned long lastFetch = 0;
   unsigned long now = millis();
 
-  if (now - lastFetch >= FETCH_INTERVAL_MS) {
-    lastFetch = now;
+  // Spotify poll every 5 s
+  if (now - lastSpotifyFetch >= SPOTIFY_POLL_MS) {
+    lastSpotifyFetch = now;
+    fetchNowPlaying(lastTrack);
+  }
+
+  // Music screen when Spotify is active
+  if (lastTrack.valid && lastTrack.is_playing) {
+    bool trackChanged = strcmp(lastRenderedTitle, lastTrack.title) != 0;
+
+    if (currentMode != MODE_MUSIC || trackChanged) {
+      currentMode = MODE_MUSIC;
+      renderMusic(lastTrack);
+      strncpy(lastRenderedTitle, lastTrack.title, sizeof(lastRenderedTitle) - 1);
+      lastProgressRender = now;
+    } else if (now - lastProgressRender >= PROGRESS_RENDER_MS) {
+      lastProgressRender = now;
+      renderMusicProgress(lastTrack);
+    }
+    return;
+  }
+
+  // Back to flights/weather when music stops
+  if (currentMode == MODE_MUSIC) {
+    lastRenderedTitle[0] = 0;
+    currentMode = MODE_FLIGHTS;
+    lastFlightFetch = 0;
+  }
+
+  // Flights / weather every 15 s
+  if (now - lastFlightFetch >= FETCH_INTERVAL_MS) {
+    lastFlightFetch = now;
 
     Flight flights[MAX_FLIGHTS];
     int count = fetchFlights(flights, MAX_FLIGHTS);
 
     if (count > 0) {
+      currentMode = MODE_FLIGHTS;
       renderFlights(flights, count);
     } else {
-      // No flights — show weather instead
-      bool weatherStale = !lastWeather.valid ||
-                          (now - lastWeatherFetch) >= WEATHER_TTL_MS;
-      if (weatherStale) {
-        Serial.println("[boot] fetching weather...");
+      bool stale = !lastWeather.valid || (now - lastWeatherFetch) >= WEATHER_TTL_MS;
+      if (stale) {
         fetchWeather(lastWeather);
         lastWeatherFetch = now;
       }
+      currentMode = MODE_WEATHER;
       renderWeather(lastWeather);
     }
   }
