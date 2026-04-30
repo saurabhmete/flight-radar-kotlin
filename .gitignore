@@ -24,3 +24,6 @@ build/
 
 # Env / secrets
 .env
+
+# Arduino credentials
+arduino/flight_radar_display/config.h
