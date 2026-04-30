@@ -13,6 +13,38 @@ Unlike generic flight trackers that show everything within a radius, this system
 - **Phone/tablet**: primary flight card expanded, two compact cards below with tap-to-expand accordion
 - **Desktop/TV**: three equal columns, each with a full aircraft photo, route, and stats
 - **OLED-optimised**: true black background, amber accent colour, minimal chrome
+- **ESP32 display**: standalone 3.5" touchscreen device showing live flights and weather with no browser needed
+
+---
+
+## ESP32 Hardware Display
+
+The `arduino/` directory contains a standalone ESP32 sketch for the **Waveshare JC3248W535C** (3.5", 320×480, AXS15231B QSPI). It connects to the same RPi backend over WiFi and renders the same data on a physical display.
+
+### What it shows
+- **Flights overhead**: primary card (callsign, route, operator, aircraft photo, altitude/speed/distance) + two compact cards
+- **No flights**: full-screen weather from open-meteo.com (temperature, feels like, condition icon, wind, humidity)
+- Mini radar in the header with live flight dot positions
+
+### Hardware
+| Pin function | GPIO |
+|---|---|
+| LCD CS/CLK/D0–D3 | 45, 47, 21, 48, 40, 39 |
+| Backlight | 1 |
+| Touch SDA/SCL/INT/RST | 4, 8, 11, 12 |
+
+> **Requirements:** OPI PSRAM must be enabled in Arduino IDE board settings. The AXS15231B display requires a full-screen canvas (frame buffer) in PSRAM — direct pixel writes to the bus don't work.
+
+### Setup
+1. Copy `arduino/flight_radar_display/config.h.example` → `config.h`
+2. Fill in your WiFi credentials and RPi IP
+3. Flash with Arduino IDE (ESP32 board package, Arduino_GFX_Library, ArduinoJson, JPEGDEC)
+
+```cpp
+#define WIFI_SSID      "YourNetwork"
+#define WIFI_PASSWORD  "YourPassword"
+#define API_HOST       "http://192.168.x.x:8000"
+```
 
 ---
 
@@ -186,6 +218,7 @@ Requirements: Java 17+, FerretDB or MongoDB, OpenSky + AeroAPI credentials.
 | Serialisation | kotlinx.serialization |
 | Build | Gradle 8 |
 | Frontend | Vanilla HTML / CSS / JS (no framework) |
+| ESP32 display | Arduino_GFX_Library, ArduinoJson, JPEGDEC |
 
 ---
 
