@@ -30,7 +30,7 @@ static unsigned long lastFlightFetch    = 0;
 static unsigned long lastProgressRender = 0;
 
 static const unsigned long WEATHER_TTL_MS    = 600000UL;  // 10 min
-static const unsigned long SPOTIFY_POLL_MS   =   1000UL;  //  1 s
+static const unsigned long SPOTIFY_POLL_MS   =   5000UL;  //  5 s
 static const unsigned long PROGRESS_RENDER_MS =  1000UL;  //  1 s
 
 enum DisplayMode { MODE_FLIGHTS, MODE_WEATHER, MODE_MUSIC };
@@ -82,7 +82,13 @@ void loop() {
       strncpy(lastRenderedTitle, lastTrack.title, sizeof(lastRenderedTitle) - 1);
       lastProgressRender = now;
     } else if (now - lastProgressRender >= PROGRESS_RENDER_MS) {
+      unsigned long elapsed = now - lastProgressRender;
       lastProgressRender = now;
+      if (lastTrack.is_playing) {
+        lastTrack.progress_ms += elapsed;
+        if (lastTrack.progress_ms > lastTrack.duration_ms)
+          lastTrack.progress_ms = lastTrack.duration_ms;
+      }
       renderMusicProgress(lastTrack);
     }
     return;

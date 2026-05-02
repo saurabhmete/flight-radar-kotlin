@@ -185,6 +185,38 @@ static void truncate(char *dst, const char *src, int maxChars) {
   dst[maxChars] = 0;
 }
 
+// Map C3 xx UTF-8 sequences (U+00C0–U+00FF) to nearest ASCII.
+// Covers all Latin-1 accented letters: umlauts, acute, grave, cedilla, etc.
+static const char _c3map[64] = {
+  'A','A','A','A','A','A','A','C', // C0-C7  À Á Â Ã Ä Å Æ Ç
+  'E','E','E','E','I','I','I','I', // C8-CF  È É Ê Ë Ì Í Î Ï
+  'D','N','O','O','O','O','O','x', // D0-D7  Ð Ñ Ò Ó Ô Õ Ö ×
+  'O','U','U','U','U','Y','P','s', // D8-DF  Ø Ù Ú Û Ü Ý Þ ß
+  'a','a','a','a','a','a','a','c', // E0-E7  à á â ã ä å æ ç
+  'e','e','e','e','i','i','i','i', // E8-EF  è é ê ë ì í î ï
+  'd','n','o','o','o','o','o','.', // F0-F7  ð ñ ò ó ô õ ö ÷
+  'o','u','u','u','u','y','p','y', // F8-FF  ø ù ú û ü ý þ ÿ
+};
+
+// Copy src → dst, transliterating UTF-8 accented chars to ASCII, max dstSize-1 chars.
+static void deAccent(char *dst, const char *src, size_t dstSize) {
+  size_t di = 0;
+  for (size_t si = 0; src[si] && di < dstSize - 1; ) {
+    uint8_t b = (uint8_t)src[si];
+    if (b < 0x80) {
+      dst[di++] = (char)b; si++;
+    } else if (b == 0xC3 && src[si + 1]) {
+      uint8_t b2 = (uint8_t)src[si + 1];
+      if (b2 >= 0x80 && b2 <= 0xBF) dst[di++] = _c3map[b2 - 0x80];
+      si += 2;
+    } else {
+      si++;
+      while ((uint8_t)src[si] >= 0x80 && (uint8_t)src[si] < 0xC0) si++;
+    }
+  }
+  dst[di] = 0;
+}
+
 // Bearing from observer to a flight (degrees, 0=N clockwise)
 static float _bearing(float lat1, float lon1, float lat2, float lon2) {
   float dLon = (lon2 - lon1) * M_PI / 180.0f;
@@ -347,7 +379,8 @@ static void _drawPrimaryCard(const Flight &f) {
   if (f.operator_name[0]) {
     _gfx->setTextColor(C_DIM3);
     _gfx->setTextSize(1);
-    char op[40]; truncate(op, f.operator_name, pw / 6);
+    char op[40]; deAccent(op, f.operator_name, sizeof(op));
+    op[pw / 6] = 0;
     _gfx->setCursor(px, y);
     _gfx->print(op);
     y += 10;
@@ -364,11 +397,13 @@ static void _drawPrimaryCard(const Flight &f) {
     _gfx->setTextSize(1);
     int halfChars = (pw / 2 - 4) / 6;
 
-    char dn[24]; truncate(dn, f.origin_name[0] ? f.origin_name : f.origin, halfChars);
+    char dn[24]; deAccent(dn, f.origin_name[0] ? f.origin_name : f.origin, sizeof(dn));
+    dn[halfChars] = 0;
     _gfx->setCursor(px, y);
     _gfx->print(dn);
 
-    char an[24]; truncate(an, f.dest_name[0] ? f.dest_name : f.destination, halfChars);
+    char an[24]; deAccent(an, f.dest_name[0] ? f.dest_name : f.destination, sizeof(an));
+    an[halfChars] = 0;
     int anW = strlen(an) * 6;
     _gfx->setCursor(cx + cw - CARD_PAD - anW, y);
     _gfx->print(an);
@@ -453,10 +488,11 @@ static void _drawCompactCard(const Flight &f, int cardY) {
   _gfx->setTextSize(1);
 
   char meta[48]; meta[0] = 0;
+  char _op[32]; deAccent(_op, f.operator_name, sizeof(_op));
   if (f.operator_name[0] && f.aircraft[0]) {
-    snprintf(meta, sizeof(meta), "%s | %s", f.operator_name, f.aircraft);
+    snprintf(meta, sizeof(meta), "%s | %s", _op, f.aircraft);
   } else if (f.operator_name[0]) {
-    snprintf(meta, sizeof(meta), "%s", f.operator_name);
+    snprintf(meta, sizeof(meta), "%s", _op);
   } else if (f.aircraft[0]) {
     snprintf(meta, sizeof(meta), "%s", f.aircraft);
   }
