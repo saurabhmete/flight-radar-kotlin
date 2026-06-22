@@ -70,7 +70,7 @@ bool fetchNowPlaying(SpotifyTrack &out) {
   HTTPClient http;
   http.begin(client, "https://api.spotify.com/v1/me/player/currently-playing");
   http.addHeader("Authorization", String("Bearer ") + _token);
-  http.setTimeout(8000);
+  http.setTimeout(3000);
 
   int code = http.GET();
 

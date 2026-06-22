@@ -46,7 +46,6 @@ void setup() {
   Serial.println("[boot] starting...");
   displayInit();
   showSplash();
-  touchInit();
 
   wifiConnect(WIFI_SSID, WIFI_PASSWORD);
   showStatus("WiFi OK");

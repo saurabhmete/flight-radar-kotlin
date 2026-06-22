@@ -11,7 +11,10 @@ import org.ssm.flightradar.api.dto.NearbyFlightsResponseDto
 import org.ssm.flightradar.api.mapper.toDto
 import org.ssm.flightradar.service.FlightService
 import org.ssm.flightradar.service.FlightEnrichmentService
+import org.ssm.flightradar.service.ImageProxyService
 import org.ssm.flightradar.util.AirportLookupService
+import io.ktor.http.*
+import io.ktor.server.request.*
 
 fun Application.registerRoutes(config: AppConfig) {
 
@@ -20,6 +23,7 @@ fun Application.registerRoutes(config: AppConfig) {
     val airportLookup = AirportLookupService()
     val enrichment = FlightEnrichmentService(config, mongo, airportLookup)
     val service = FlightService(openSky, mongo, config, enrichment)
+    val imageProxy = ImageProxyService()
 
     routing {
         // Simple OLED-friendly dashboard for an old Android phone.
@@ -30,6 +34,23 @@ fun Application.registerRoutes(config: AppConfig) {
 
         get("/health") {
             call.respond(mapOf("status" to "ok"))
+        }
+
+        get("/api/image/proxy") {
+            val url = call.request.queryParameters["u"]
+            val w = call.request.queryParameters["w"]?.toIntOrNull() ?: 320
+            val h = call.request.queryParameters["h"]?.toIntOrNull() ?: 240
+            if (url.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "missing u")
+                return@get
+            }
+            val result = imageProxy.fetch(url, w, h)
+            if (result == null) {
+                call.respond(HttpStatusCode.BadGateway, "image fetch failed")
+                return@get
+            }
+            call.response.headers.append(HttpHeaders.CacheControl, "public, max-age=86400")
+            call.respondBytes(result.bytes, ContentType.parse(result.contentType))
         }
 
         route("/api/flights") {

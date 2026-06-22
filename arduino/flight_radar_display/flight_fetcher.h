@@ -11,7 +11,7 @@ struct Flight {
   char operator_name[28];
   char origin_name[28];    // departure_name (truncated)
   char dest_name[28];      // arrival_name   (truncated)
-  char image_url[192];     // aircraft_image_url
+  char image_url[320];     // proxied image URL (backend resize proxy)
   bool image_exact;        // true when type == "EXACT" (real photo)
   float altitude;          // feet  (converted from metres)
   float speed;             // km/h  (converted from m/s x3.6)

@@ -28,3 +28,9 @@ build/
 # Arduino credentials
 arduino/flight_radar_display/config.h
 arduino/SESSION_LOG.md
+
+# Local infra notes / scratch images (never commit)
+rpi4-state.md
+*.jpeg
+*.jpg
+*.png
