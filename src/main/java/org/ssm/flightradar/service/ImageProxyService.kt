@@ -24,14 +24,13 @@ class ImageProxyService(cacheDirPath: String = System.getProperty("java.io.tmpdi
     private val cacheDir = File(cacheDirPath).apply { mkdirs() }
 
     // Hosts we're willing to proxy. Keeps the endpoint from becoming an open redirect/SSRF.
-    private val allowedHosts = setOf(
-        "www.planespotters.net",
-        "tile.planespotters.net",
-        "img.planespotters.net",
-        "cdn.planespotters.net",
-        "upload.wikimedia.org",
-        "commons.wikimedia.org",
-        "i.scdn.co"
+    // planespotters serves photos from t.plnspttrs.net (BunnyCDN) — the rest are
+    // kept in case the resolver ever switches CDNs / hosts.
+    private val allowedHostSuffixes = listOf(
+        "plnspttrs.net",
+        "planespotters.net",
+        "wikimedia.org",
+        "scdn.co"
     )
 
     data class Result(val bytes: ByteArray, val contentType: String = "image/jpeg")
@@ -40,8 +39,9 @@ class ImageProxyService(cacheDirPath: String = System.getProperty("java.io.tmpdi
         val decoded = try { URLDecoder.decode(rawUrl, Charsets.UTF_8) } catch (_: Exception) { rawUrl }
         val parsed = try { URL(decoded) } catch (_: Exception) { return null }
         if (parsed.protocol !in setOf("http", "https")) return null
-        if (parsed.host !in allowedHosts) {
-            log.warn("[img-proxy] reject host {}", parsed.host)
+        val host = parsed.host.lowercase()
+        if (allowedHostSuffixes.none { host == it || host.endsWith(".$it") }) {
+            log.warn("[img-proxy] reject host {}", host)
             return null
         }
         val tw = w.coerceIn(16, 1024)
