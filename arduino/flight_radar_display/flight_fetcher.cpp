@@ -10,6 +10,33 @@ static void safeCopy(char *dst, size_t dstLen, const char *src) {
   dst[dstLen - 1] = 0;
 }
 
+static String urlEncode(const char *s) {
+  static const char *hex = "0123456789ABCDEF";
+  String out;
+  out.reserve(strlen(s) * 3);
+  for (const char *p = s; *p; ++p) {
+    unsigned char c = (unsigned char)*p;
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+        c == '-' || c == '_' || c == '.' || c == '~') {
+      out += (char)c;
+    } else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 0x0F];
+    }
+  }
+  return out;
+}
+
+// Wrap a remote image URL with our backend resize proxy so the ESP32 can decode
+// at scale=1 (JPEGDEC's scaled modes leave coloured-line artifacts on MCU edges).
+static void buildProxiedImageUrl(char *dst, size_t dstLen, const char *origUrl, int w, int h) {
+  if (!origUrl || !origUrl[0]) { dst[0] = 0; return; }
+  String u = String(API_HOST) + "/api/image/proxy?w=" + String(w) + "&h=" + String(h) +
+             "&u=" + urlEncode(origUrl);
+  safeCopy(dst, dstLen, u.c_str());
+}
+
 int fetchFlights(Flight *out, int maxCount) {
   HTTPClient http;
   String url = String(API_HOST) + "/api/flights/nearby?limit=" + String(maxCount);
@@ -52,7 +79,8 @@ int fetchFlights(Flight *out, int maxCount) {
     safeCopy(fl.origin_name,   sizeof(fl.origin_name),    f["departure_name"]     | "");
     safeCopy(fl.dest_name,     sizeof(fl.dest_name),      f["arrival_name"]       | "");
     safeCopy(fl.operator_name, sizeof(fl.operator_name),  f["operator_name"]      | "");
-    safeCopy(fl.image_url,    sizeof(fl.image_url),       f["aircraft_image_url"] | "");
+    // Route aircraft image through backend proxy (resizes to fit, kills SCALE_QUARTER artifacts).
+    buildProxiedImageUrl(fl.image_url, sizeof(fl.image_url), f["aircraft_image_url"] | "", 320, 120);
     const char *imgType = f["aircraft_image_type"] | "";
     fl.image_exact = (strcmp(imgType, "EXACT") == 0);
 
