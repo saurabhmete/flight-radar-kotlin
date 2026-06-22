@@ -36,38 +36,6 @@ static const unsigned long PROGRESS_RENDER_MS =  1000UL;  //  1 s
 enum DisplayMode { MODE_FLIGHTS, MODE_WEATHER, MODE_MUSIC };
 static DisplayMode currentMode = MODE_FLIGHTS;
 
-// Tap-to-cycle: when set, overrides the automatic mode-selection logic in loop().
-// MODE_AUTO == follow the default rules (music if playing, flights if any, else weather).
-enum ForcedMode { FORCED_AUTO, FORCED_FLIGHTS, FORCED_WEATHER, FORCED_MUSIC };
-static ForcedMode    forcedMode      = FORCED_AUTO;
-static unsigned long lastTapMs       = 0;
-static bool          lastTouchActive = false;
-static const unsigned long TAP_DEBOUNCE_MS = 350;
-
-static void cycleForcedMode() {
-  switch (forcedMode) {
-    case FORCED_AUTO:    forcedMode = FORCED_FLIGHTS; break;
-    case FORCED_FLIGHTS: forcedMode = FORCED_WEATHER; break;
-    case FORCED_WEATHER: forcedMode = FORCED_MUSIC;   break;
-    case FORCED_MUSIC:   forcedMode = FORCED_AUTO;    break;
-  }
-  // Force a re-render on the next loop tick.
-  lastFlightFetch    = 0;
-  lastRenderedTitle[0] = 0;
-  Serial.printf("[tap] forcedMode -> %d\n", (int)forcedMode);
-}
-
-static void pollTouchTap() {
-  int x, y;
-  bool down = touchRead(x, y);
-  unsigned long now = millis();
-  if (down && !lastTouchActive && (now - lastTapMs) > TAP_DEBOUNCE_MS) {
-    lastTapMs = now;
-    cycleForcedMode();
-  }
-  lastTouchActive = down;
-}
-
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
@@ -78,7 +46,6 @@ void setup() {
   Serial.println("[boot] starting...");
   displayInit();
   showSplash();
-  touchInit();
 
   wifiConnect(WIFI_SSID, WIFI_PASSWORD);
   showStatus("WiFi OK");
@@ -98,60 +65,12 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  pollTouchTap();
-
   // Spotify poll every 5 s
   if (now - lastSpotifyFetch >= SPOTIFY_POLL_MS) {
     lastSpotifyFetch = now;
     fetchNowPlaying(lastTrack);
   }
 
-  // ── Tap-forced modes (override auto logic) ─────────────────────────────────
-  if (forcedMode == FORCED_MUSIC) {
-    // Same render path as auto-music below, but draw a placeholder when no track.
-    if (lastTrack.valid && lastTrack.is_playing) {
-      bool trackChanged = strcmp(lastRenderedTitle, lastTrack.title) != 0;
-      if (currentMode != MODE_MUSIC || trackChanged) {
-        currentMode = MODE_MUSIC;
-        renderMusic(lastTrack);
-        strncpy(lastRenderedTitle, lastTrack.title, sizeof(lastRenderedTitle) - 1);
-        lastProgressRender = now;
-      } else if (now - lastProgressRender >= PROGRESS_RENDER_MS) {
-        unsigned long elapsed = now - lastProgressRender;
-        lastProgressRender = now;
-        lastTrack.progress_ms += elapsed;
-        if (lastTrack.progress_ms > lastTrack.duration_ms)
-          lastTrack.progress_ms = lastTrack.duration_ms;
-        renderMusicProgress(lastTrack);
-      }
-    } else if (currentMode != MODE_MUSIC) {
-      currentMode = MODE_MUSIC;
-      showStatus("Nothing playing");
-    }
-    return;
-  }
-  if (forcedMode == FORCED_WEATHER) {
-    bool stale = !lastWeather.valid || (now - lastWeatherFetch) >= WEATHER_TTL_MS;
-    if (stale || currentMode != MODE_WEATHER) {
-      if (stale) { fetchWeather(lastWeather); lastWeatherFetch = now; }
-      currentMode = MODE_WEATHER;
-      renderWeather(lastWeather);
-    }
-    return;
-  }
-  if (forcedMode == FORCED_FLIGHTS) {
-    if (now - lastFlightFetch >= FETCH_INTERVAL_MS || currentMode != MODE_FLIGHTS) {
-      lastFlightFetch = now;
-      Flight flights[MAX_FLIGHTS];
-      int count = fetchFlights(flights, MAX_FLIGHTS);
-      currentMode = MODE_FLIGHTS;
-      if (count > 0) renderFlights(flights, count);
-      else           showStatus("No flights overhead");
-    }
-    return;
-  }
-
-  // ── FORCED_AUTO: original logic ────────────────────────────────────────────
   // Music screen when Spotify is active
   if (lastTrack.valid && lastTrack.is_playing) {
     bool trackChanged = strcmp(lastRenderedTitle, lastTrack.title) != 0;

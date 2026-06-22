@@ -5,7 +5,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <Wire.h>
 #include <math.h>
 #include "config.h"
 #include "flight_fetcher.h"
@@ -103,7 +102,7 @@ static bool _drawImageFromUrl(const char *url, int x, int y, int maxW, int maxH)
   HTTPClient http;
   if (isHttps) http.begin(secureClient, url);
   else         http.begin(url);
-  http.setTimeout(8000);
+  http.setTimeout(5000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.addHeader("User-Agent", "FlightRadar/1.0 ESP32");
   int code = http.GET();
@@ -793,36 +792,6 @@ inline void renderWeather(const Weather &w) {
   _gfx->print(updBuf);
 
   _gfx->flush();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ── Touch ──────────────────────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════════
-
-inline void touchInit() {
-  pinMode(TOUCH_RST, OUTPUT);
-  pinMode(TOUCH_INT, INPUT_PULLUP);
-  digitalWrite(TOUCH_RST, LOW);  delay(10);
-  digitalWrite(TOUCH_RST, HIGH); delay(50);
-  Wire.begin(TOUCH_SDA, TOUCH_SCL);
-  Wire.setClock(TOUCH_I2C_HZ);
-  Serial.println("[touch] init OK");
-}
-
-// AXS15231B: INT pin goes LOW when a finger is down.
-// Read 6 bytes directly — no register write needed.
-inline bool touchRead(int &x, int &y) {
-  if (digitalRead(TOUCH_INT) != LOW) return false;  // no touch
-
-  uint8_t buf[6] = {};
-  Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)6);
-  for (int i = 0; i < 6 && Wire.available(); i++) buf[i] = Wire.read();
-
-  // buf[1] = finger count, buf[2..5] = x/y coords
-  if (buf[1] == 0) return false;
-  x = ((buf[2] & 0x0F) << 8) | buf[3];
-  y = ((buf[4] & 0x0F) << 8) | buf[5];
-  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -78,17 +78,22 @@ class ImageProxyService(cacheDirPath: String = System.getProperty("java.io.tmpdi
         } finally { conn.disconnect() }
     }
 
-    private fun resize(src: BufferedImage, maxW: Int, maxH: Int): BufferedImage {
+    // Cover-resize: scale so the source fully covers the target box, then center-crop
+    // the overflow. Fills the box completely (no letterboxing) at the cost of trimming
+    // top/bottom or sides. Planespotters photos are typically centred, so cropping looks fine.
+    private fun resize(src: BufferedImage, targetW: Int, targetH: Int): BufferedImage {
         val sw = src.width
         val sh = src.height
-        val scale = minOf(maxW.toDouble() / sw, maxH.toDouble() / sh).coerceAtMost(1.0)
-        val dw = maxOf(1, (sw * scale).toInt())
-        val dh = maxOf(1, (sh * scale).toInt())
-        val dst = BufferedImage(dw, dh, BufferedImage.TYPE_INT_RGB)
+        val scale = maxOf(targetW.toDouble() / sw, targetH.toDouble() / sh)
+        val scaledW = (sw * scale).toInt().coerceAtLeast(targetW)
+        val scaledH = (sh * scale).toInt().coerceAtLeast(targetH)
+        val offX = (scaledW - targetW) / 2
+        val offY = (scaledH - targetH) / 2
+        val dst = BufferedImage(targetW, targetH, BufferedImage.TYPE_INT_RGB)
         val g = dst.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-        g.drawImage(src, 0, 0, dw, dh, null)
+        g.drawImage(src, -offX, -offY, scaledW, scaledH, null)
         g.dispose()
         return dst
     }

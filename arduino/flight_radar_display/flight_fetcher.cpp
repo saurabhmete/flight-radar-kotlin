@@ -43,7 +43,7 @@ int fetchFlights(Flight *out, int maxCount) {
   Serial.println("[fetch] GET " + url);
 
   http.begin(url);
-  http.setTimeout(8000);
+  http.setTimeout(3000);
 
   int code = http.GET();
   if (code != 200) {
@@ -79,8 +79,10 @@ int fetchFlights(Flight *out, int maxCount) {
     safeCopy(fl.origin_name,   sizeof(fl.origin_name),    f["departure_name"]     | "");
     safeCopy(fl.dest_name,     sizeof(fl.dest_name),      f["arrival_name"]       | "");
     safeCopy(fl.operator_name, sizeof(fl.operator_name),  f["operator_name"]      | "");
-    // Route aircraft image through backend proxy (resizes to fit, kills SCALE_QUARTER artifacts).
-    buildProxiedImageUrl(fl.image_url, sizeof(fl.image_url), f["aircraft_image_url"] | "", 320, 120);
+    // Route aircraft image through backend proxy at exactly the display slot dimensions
+    // (310x107 matches cw-2 x IMAGE_H-1 in display.h) so JPEGDEC decodes at scale=1 — no
+    // SCALE_HALF/QUARTER artifacts, and the photo fills the box (proxy does center-crop).
+    buildProxiedImageUrl(fl.image_url, sizeof(fl.image_url), f["aircraft_image_url"] | "", 310, 107);
     const char *imgType = f["aircraft_image_type"] | "";
     fl.image_exact = (strcmp(imgType, "EXACT") == 0);
 

@@ -63,7 +63,7 @@ bool fetchWeather(Weather &out) {
 
   HTTPClient http;
   http.begin(client, url);
-  http.setTimeout(10000);
+  http.setTimeout(4000);
 
   int code = http.GET();
   if (code != 200) {
